@@ -3959,27 +3959,101 @@ document.addEventListener("DOMContentLoaded", loadLiveNflOdds);
 </div>
 
 <!-- =========================
-     SUPABASE CLIENT (MUST be last, and only once)
+     SUPABASE (NON-MODULE, RELIABLE)
      ========================= -->
-<script type="module">
-  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-  const SUPABASE_URL = "https://kmgrpyvcxonfjswxusbt.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZ3JweXZjeG9uZmpzd3h1c2J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NjE4NTIsImV4cCI6MjA4MTIzNzg1Mn0.teDypPoT-TMPkIDGemYVRfCNdmK0uAbOCDaiHfNmgac";
-
-  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // 1) Create client globally (no module timing issues)
+  window.supabase = supabase.createClient(
+    "https://kmgrpyvcxonfjswxusbt.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZ3JweXZjeG9uZmpzd3h1c2J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NjE4NTIsImV4cCI6MjA4MTIzNzg1Mn0.teDypPoT-TMPkIDGemYVRfCNdmK0uAbOCDaiHfNmgac",
+    {
+      auth: { persistSession: true, autoRefreshToken: true }
+    }
+  );
 
   console.log("SUPABASE READY:", !!window.supabase);
 
-  // OPTIONAL: if already logged in, allow Continue to work immediately
-  const sessionRes = await window.supabase.auth.getSession();
-  console.log("INITIAL getSession:", sessionRes);
+  // 2) Enter app helper
+  function exitAuthAndEnterApp(source) {
+    console.log("exitAuthAndEnterApp:", source);
+
+    const overlay = document.getElementById("auth-overlay");
+    if (overlay) overlay.style.display = "none";
+
+    const appShell = document.querySelector(".app-shell");
+    if (appShell) {
+      appShell.style.display = "flex";
+      appShell.style.opacity = "1";
+      appShell.style.visibility = "visible";
+    } else {
+      console.warn("Missing .app-shell in HTML. Add it or update selector.");
+    }
+
+    if (typeof mode !== "undefined") mode = "sports";
+    if (typeof renderScreen === "function") renderScreen();
+  }
+
+  async function handleSignIn() {
+    const email = (document.getElementById("email")?.value || "").trim();
+    const password = document.getElementById("password")?.value || "";
+    if (!email || !password) return alert("Enter email and password");
+
+    const res = await window.supabase.auth.signInWithPassword({ email, password });
+    console.log("SIGNIN RESPONSE:", res);
+
+    if (res.error) return alert(res.error.message);
+
+    const sess = await window.supabase.auth.getSession();
+    console.log("POST SIGNIN SESSION:", sess.data.session);
+
+    if (!sess.data.session) return alert("Signed in but no session created.");
+
+    exitAuthAndEnterApp("signIn");
+  }
+
+  async function handleSignUp() {
+    const email = (document.getElementById("email")?.value || "").trim();
+    const password = document.getElementById("password")?.value || "";
+    if (!email || !password) return alert("Enter email and password");
+
+    const res = await window.supabase.auth.signUp({ email, password });
+    console.log("SIGNUP RESPONSE:", res);
+
+    if (res.error) return alert(res.error.message);
+
+    alert("Account created. If email confirmation is enabled, confirm then sign in.");
+  }
+
+  // 3) Wire buttons after DOM exists
+  window.addEventListener("load", () => {
+    console.log("WIRING AUTH BUTTONS…");
+
+    document.getElementById("auth-skip")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      exitAuthAndEnterApp("skip");
+    });
+
+    document.getElementById("auth-continue")?.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const sess = await window.supabase.auth.getSession();
+      console.log("CONTINUE SESSION:", sess.data.session);
+      if (!sess.data.session) return alert("Please sign in first.");
+      exitAuthAndEnterApp("continue");
+    });
+
+    document.getElementById("signInBtn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      console.log("SIGN IN CLICK");
+      handleSignIn();
+    });
+
+    document.getElementById("signUpBtn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      console.log("SIGN UP CLICK");
+      handleSignUp();
+    });
+  });
 </script>
 
 </body>
