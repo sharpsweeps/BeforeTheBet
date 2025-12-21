@@ -1342,7 +1342,7 @@
           const youRow = document.createElement("div");
           youRow.className = "matchup-line";
           youRow.style.marginTop = "4px";
-          youRow.textContent = `Your pick: ${already.vote === "confident" ? "Confident ✅" : "Doubt It 🤔"} • Saved`;
+          youRow.textContent = `Your pick: ${already.vote === "confident" ? "Confident ✅" : "Doubt It 🤔"} • In MyBias`;
           card.appendChild(youRow);
 
           card.classList.add("disabled");
@@ -1354,9 +1354,9 @@
 
       function renderMyBiasFront() {
         logoEl.className = "sport-logo-circle sport-logo-nba";
-        logoEl.textContent = "📌";
+        logoEl.textContent = "🛒";
         nameEl.textContent = "MyBias";
-        codeEl.textContent = "Lines you swiped";
+        codeEl.textContent = "Your cart";
         tapHintFrontEl.textContent = "Double-click center to open ↻";
         indexIndicatorFront.textContent = "";
         indexIndicatorBack.textContent = "";
@@ -1365,7 +1365,7 @@
       function renderMyBiasBack() {
         backTitleEl.textContent = "MyBias";
         backSubEl.textContent =
-          "Swipe items here to move them: Confident → MyLocks, Doubt It → MyArchive. Hold to change.";
+          "Cart: swipe right → MyLocks (checkout), swipe left → MyArchive (save for later).";
         backFooterNoteEl.textContent = isCommunityUnlocked()
           ? "Community SideBias unlocked (green)."
           : `SideBias hidden until you swipe ${SWIPES_TO_UNLOCK_COMMUNITY} times (blue 50/50).`;
@@ -1382,10 +1382,10 @@
           empty.className = "matchup-card";
           const t = document.createElement("div");
           t.className = "matchup-label";
-          t.textContent = "No lines in MyBias yet";
+          t.textContent = "Your cart is empty";
           const p = document.createElement("div");
           p.className = "matchup-line";
-          p.textContent = "Swipe lines in games first — then manage them here.";
+          p.textContent = "Swipe lines in games first — then checkout (MyLocks) or save for later (MyArchive).";
           empty.appendChild(t);
           empty.appendChild(p);
           matchupsListEl.appendChild(empty);
@@ -1410,7 +1410,7 @@
 
           const helper = document.createElement("div");
           helper.className = "matchup-line";
-          helper.textContent = "Swipe: Doubt It → Archive • Confident → Locks. Double-click: details. Hold: change.";
+          helper.textContent = "Swipe: right → MyLocks • left → MyArchive. Double-click: details. Hold: change.";
 
           left.appendChild(label);
           left.appendChild(line);
@@ -1431,13 +1431,6 @@
             item.communityConfident ?? 50,
             item.communityDoubt ?? 50
           ));
-
-          // Your vote row
-          const youRow = document.createElement("div");
-          youRow.className = "matchup-line";
-          youRow.style.marginTop = "4px";
-          youRow.textContent = `Your pick: ${item.vote === "confident" ? "Confident ✅" : "Doubt It 🤔"} • Hold to change`;
-          card.appendChild(youRow);
 
           attachSwipeAndHoldHandlers(card, {
             sportIndex: item.sportIndex,
@@ -1466,7 +1459,7 @@
 
       function renderLocksBack() {
         backTitleEl.textContent = "MyLocks";
-        backSubEl.textContent = "Locks persist across sessions/devices (when DB is enabled). Hold to remove from locks.";
+        backSubEl.textContent = "Order page: tap PLACE BET to checkout. Hold to remove from locks.";
         backFooterNoteEl.textContent = "";
         tapHintBackEl.textContent = "Double-click center to close ↺";
 
@@ -1484,7 +1477,7 @@
           t.textContent = "No locks yet";
           const p = document.createElement("div");
           p.className = "matchup-line";
-          p.textContent = "Mark a line as Confident to push it into MyLocks.";
+          p.textContent = "Move items from MyBias into MyLocks by swiping right.";
           empty.appendChild(t);
           empty.appendChild(p);
           matchupsListEl.appendChild(empty);
@@ -1543,12 +1536,6 @@
               item.communityDoubt ?? 50
             ));
 
-            const youRow = document.createElement("div");
-            youRow.className = "matchup-line";
-            youRow.style.marginTop = "4px";
-            youRow.textContent = "Your lock: Confident ✅ • Saved";
-            card.appendChild(youRow);
-
             /* =============================================
                per-line PLACE BET button (inside each lock card)
                ============================================= */
@@ -1589,7 +1576,7 @@
         logoEl.className = "sport-logo-circle sport-logo-nba";
         logoEl.textContent = "🗃️";
         nameEl.textContent = "MyArchive";
-        codeEl.textContent = "Doubt It history";
+        codeEl.textContent = "Save for later";
         tapHintFrontEl.textContent = "Double-click center to open ↻";
         indexIndicatorFront.textContent = "";
         indexIndicatorBack.textContent = "";
@@ -1597,7 +1584,7 @@
 
       function renderArchiveBack() {
         backTitleEl.textContent = "MyArchive";
-        backSubEl.textContent = "Archived lines persist. Double-click: details. Hold: change bias / restore.";
+        backSubEl.textContent = "Save for later. Double-click: details. Hold: change bias / restore.";
         backFooterNoteEl.textContent = "";
         tapHintBackEl.textContent = "Double-click center to close ↺";
 
@@ -1612,10 +1599,10 @@
           empty.className = "matchup-card";
           const t = document.createElement("div");
           t.className = "matchup-label";
-          t.textContent = "No archived lines";
+          t.textContent = "Nothing saved for later";
           const p = document.createElement("div");
           p.className = "matchup-line";
-          p.textContent = "Swipe Doubt It on MyBias to place lines here.";
+          p.textContent = "Swipe left in MyBias to move lines here.";
           empty.appendChild(t);
           empty.appendChild(p);
           matchupsListEl.appendChild(empty);
@@ -1661,12 +1648,6 @@
             item.communityDoubt ?? 50
           ));
 
-          const youRow = document.createElement("div");
-          youRow.className = "matchup-line";
-          youRow.style.marginTop = "4px";
-          youRow.textContent = "Your pick: Doubt It 🤔 • Saved";
-          card.appendChild(youRow);
-
           card.addEventListener("dblclick", (e) => {
             e.stopPropagation();
             openLineDetails({
@@ -1710,37 +1691,52 @@
 
         matchupsListEl.innerHTML = "";
 
-        const card = document.createElement("div");
-        card.className = "matchup-card";
+        // ✅ CHANGE: make details feel like the other screens (multiple cards, same sizing rhythm)
+        const c1 = document.createElement("div");
+        c1.className = "matchup-card";
+        const c1t = document.createElement("div");
+        c1t.className = "matchup-label";
+        c1t.textContent = meta.label;
+        const c1p = document.createElement("div");
+        c1p.className = "matchup-line";
+        c1p.textContent = `${stats.sportName} • ${stats.matchupName} • ${meta.book || "Best Available"}`;
+        c1.appendChild(c1t);
+        c1.appendChild(c1p);
 
-        const t = document.createElement("div");
-        t.className = "matchup-label";
-        t.textContent = meta.label;
+        const c2 = document.createElement("div");
+        c2.className = "matchup-card";
+        const c2t = document.createElement("div");
+        c2t.className = "matchup-label";
+        c2t.textContent = "Performance Snapshot";
+        const c2p1 = document.createElement("div");
+        c2p1.className = "matchup-line";
+        c2p1.textContent = `Season: ${stats.season} • Games sampled: ${stats.gamesSampled}`;
+        const c2p2 = document.createElement("div");
+        c2p2.className = "matchup-line";
+        c2p2.textContent = `Hit rate: ${stats.hitRate} • Avg: ${stats.avgDelta}`;
+        c2.appendChild(c2t);
+        c2.appendChild(c2p1);
+        c2.appendChild(c2p2);
 
-        const p1 = document.createElement("div");
-        p1.className = "matchup-line";
-        p1.textContent = `Season: ${stats.season} • Games sampled: ${stats.gamesSampled}`;
+        const c3 = document.createElement("div");
+        c3.className = "matchup-card";
+        const c3t = document.createElement("div");
+        c3t.className = "matchup-label";
+        c3t.textContent = "Recent Games";
+        const c3p1 = document.createElement("div");
+        c3p1.className = "matchup-line";
+        c3p1.textContent = `Last 5: ${stats.last5.join(" • ")}`;
+        const c3p2 = document.createElement("div");
+        c3p2.className = "matchup-line";
+        c3p2.style.marginTop = "6px";
+        c3p2.textContent = stats.note;
+        c3.appendChild(c3t);
+        c3.appendChild(c3p1);
+        c3.appendChild(c3p2);
 
-        const p2 = document.createElement("div");
-        p2.className = "matchup-line";
-        p2.textContent = `Hit rate: ${stats.hitRate} • Avg: ${stats.avgDelta}`;
-
-        const p3 = document.createElement("div");
-        p3.className = "matchup-line";
-        p3.textContent = `Last 5: ${stats.last5.join(" • ")}`;
-
-        const p4 = document.createElement("div");
-        p4.className = "matchup-line";
-        p4.style.marginTop = "6px";
-        p4.textContent = stats.note;
-
-        card.appendChild(t);
-        card.appendChild(p1);
-        card.appendChild(p2);
-        card.appendChild(p3);
-        card.appendChild(p4);
-
-        matchupsListEl.appendChild(card);
+        matchupsListEl.appendChild(c1);
+        matchupsListEl.appendChild(c2);
+        matchupsListEl.appendChild(c3);
       }
 
       /*******************************
@@ -1793,7 +1789,7 @@
                 variant: "danger",
                 onClick: async () => {
                   await setBiasStatus(item.key, "inbox");
-                  showToast("Removed from locks");
+                  showToast("Moved back to MyBias");
                   renderScreen();
                 },
               });
@@ -1887,7 +1883,7 @@
                   variant: "danger",
                   onClick: async () => {
                     await setBiasStatus(key, "inbox");
-                    showToast("Removed from locks");
+                    showToast("Moved back to MyBias");
                     renderScreen();
                   },
                 });
@@ -1943,13 +1939,32 @@
         async function finalizeSwipe(direction) {
           if (!requireLoginGuard()) return;
 
-          const vote = direction === "right" ? "confident" : "doubt";
           const key = makeLineKey({
             sportId: meta.sportId,
             matchupName: meta.matchupName,
             label: meta.label,
             book: meta.book
           });
+
+          /* ======================================================
+             ✅ CHANGE: MyBias behaves like a cart (not "already saved")
+             - swipe right -> MyLocks (checkout)
+             - swipe left  -> MyArchive (save for later)
+             ====================================================== */
+          if (context === "mybias") {
+            if (!biasStore[key]) return; // cart item should exist
+            if (direction === "right") {
+              await setBiasStatus(key, "lock");
+              showToast("Moved to MyLocks");
+            } else {
+              await setBiasStatus(key, "archived");
+              showToast("Moved to MyArchive");
+            }
+            renderScreen();
+            return;
+          }
+
+          const vote = direction === "right" ? "confident" : "doubt";
 
           if (biasStore[key] && biasStore[key].vote) {
             showToast("Already saved");
@@ -1959,10 +1974,7 @@
           userSwipeCount += 1;
           await persistUserSwipeCount();
 
-          let status = "inbox";
-          if (context === "mybias") {
-            status = vote === "confident" ? "lock" : "archived";
-          }
+          const status = "inbox";
 
           const communityConf = typeof ln.confident === "number" ? ln.confident : 50;
           const communityDoubt = typeof ln.doubt === "number" ? ln.doubt : 50;
@@ -1983,14 +1995,8 @@
             communityDoubt: communityDoubt,
           });
 
-          if (context === "mybias") {
-            showToast(vote === "confident" ? "Saved to MyLocks" : "Saved to MyArchive");
-            renderScreen();
-            return;
-          }
-
           markCardDisabledAndDrop(card);
-          showToast(vote === "confident" ? "Confident ✅ saved" : "Doubt It 🤔 saved");
+          showToast(vote === "confident" ? "Added to MyBias ✅" : "Added to MyBias ✅");
 
           if (isCommunityUnlocked()) renderScreen();
         }
@@ -2218,7 +2224,6 @@
         biasStore[key].updatedAt = Date.now();
 
         // If flip happens, also route to correct bucket:
-        // confident -> lock, doubt -> archived (only if currently in locks or archive or inbox edit)
         if (biasStore[key].status === "lock" && vote === "doubt") biasStore[key].status = "archived";
         if (biasStore[key].status === "archived" && vote === "confident") biasStore[key].status = "lock";
         if (biasStore[key].status === "inbox") {
@@ -2269,7 +2274,7 @@
           titleEl.textContent = `${sport.name} – All Lines`;
           subtitleEl.textContent = matchup.name;
           directionsEl.innerHTML =
-            'Click edges to change game. Double-click center to open/close lines. Double-click a line for details.';
+            'All Lines stays open here. Double-click center to close/open. Double-click a line for details.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderMatchupsFront();
@@ -2287,27 +2292,27 @@
           renderLineDetailsBack();
         } else if (mode === "mybias") {
           titleEl.textContent = "MyBias";
-          subtitleEl.textContent = "Your saved lines";
+          subtitleEl.textContent = "Your cart";
           directionsEl.innerHTML =
-            'Swipe in MyBias: Confident → MyLocks, Doubt It → MyArchive. Hold a line to change its bias.';
+            'Cart: swipe right → MyLocks (checkout), swipe left → MyArchive (save for later). Hold a line to change its bias.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderMyBiasFront();
           renderMyBiasBack();
         } else if (mode === "locks") {
           titleEl.textContent = "MyLocks";
-          subtitleEl.textContent = "Grouped by sportsbook";
+          subtitleEl.textContent = "Checkout page";
           directionsEl.innerHTML =
-            'Hold a lock to remove it. Buttons are placeholders for affiliate links.';
+            'Tap PLACE BET to checkout. Hold a lock to remove it.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderLocksFront();
           renderLocksBack();
         } else if (mode === "archive") {
           titleEl.textContent = "MyArchive";
-          subtitleEl.textContent = "Your Doubt It history";
+          subtitleEl.textContent = "Save for later";
           directionsEl.innerHTML =
-            'Hold a line to change its bias (only that line). Double-click for details.';
+            'Save for later. Hold a line to change its bias (only that line). Double-click for details.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderArchiveFront();
@@ -2341,9 +2346,6 @@
 
       /*******************************
        * CARD CLICK BEHAVIOR
-       * - sports: single click center toggles flip; dblclick center open matchups
-       * - matchups/allLines: single click edges change matchup; center does nothing; dblclick center toggles flip
-       * - keep flipped until user dblclick center to close
        *******************************/
       const DOUBLE_CLICK_DELAY = 250;
       let clickTimeout = null;
@@ -2353,17 +2355,19 @@
         const x = e.clientX - rect.left;
         const zone = x / rect.width;
 
-        // In matchups/allLines: single click edges change game; center does NOT flip.
+        // In matchups/allLines: single click edges change game; center does nothing; dblclick center toggles flip
         if (mode === "matchups" || mode === "allLines") {
           if (zone < 0.2) {
             currentMatchupIndex = getPrevIndex(currentSport().matchups.length, currentMatchupIndex);
-            flipped = false;
+            // ✅ CHANGE: in allLines, remain flipped showing lines
+            flipped = (mode === "allLines") ? true : false;
             renderScreen();
             return;
           }
           if (zone > 0.8) {
             currentMatchupIndex = getNextIndex(currentSport().matchups.length, currentMatchupIndex);
-            flipped = false;
+            // ✅ CHANGE: in allLines, remain flipped showing lines
+            flipped = (mode === "allLines") ? true : false;
             renderScreen();
             return;
           }
@@ -2373,9 +2377,7 @@
 
         // In hub pages:
         if (mode === "mybias") {
-          // =============================================
-          // ✅ CHANGE: MyBias one click should NOT flip card
-          // =============================================
+          // MyBias one click does NOT flip card
           return;
         }
 
@@ -2431,10 +2433,7 @@
         }
 
         if (mode === "matchups") {
-          // =============================================
-          // ✅ CHANGE: On Top Lines (back), dblclick perimeter opens ALL LINES
-          // (interpreted as: while flipped open showing Top Lines)
-          // =============================================
+          // On Top Lines (back), dblclick perimeter opens ALL LINES
           if (flipped === true && (zone < 0.2 || zone > 0.8)) {
             mode = "allLines";
             flipped = true; // keep lines open
@@ -2451,7 +2450,7 @@
         }
 
         if (mode === "allLines" && zone >= 0.2 && zone <= 0.8) {
-          // toggle flip, do NOT auto-close after swipes
+          // toggle flip
           flipped = !flipped;
           renderCardFlipState();
           return;
@@ -2475,9 +2474,7 @@
       });
 
       /* =============================================
-         ✅ CHANGE: Swipe between GAMES on the NFL Game Screen (and other game screens)
-         - Swipe left/right on the front (not flipped) to move between matchups
-         - Does NOT interfere with scrolling lines (only active when flipped=false)
+         Swipe between GAMES on matchups/allLines front
          ============================================= */
       (function attachCardAreaGameSwipe() {
         let down = false;
@@ -2520,7 +2517,6 @@
               intentLocked = true;
               e.preventDefault();
             } else if (Math.abs(dy) > INTENT_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
-              // vertical intent: ignore (let page scroll if any)
               down = false;
             }
           }
@@ -2538,11 +2534,11 @@
 
           if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
 
-          // Left swipe: next, Right swipe: prev (natural deck feel)
           if (mode === "matchups" || mode === "allLines") {
             if (dx < 0) currentMatchupIndex = getNextIndex(currentSport().matchups.length, currentMatchupIndex);
             else currentMatchupIndex = getPrevIndex(currentSport().matchups.length, currentMatchupIndex);
-            flipped = false;
+            // ✅ CHANGE: if in allLines, stay flipped showing lines
+            flipped = (mode === "allLines") ? true : false;
             renderScreen();
             return;
           }
@@ -2587,9 +2583,9 @@
               currentSportIndex = sIndex;
               currentMatchupIndex = mIndex;
 
-              // Open the All Lines view but DO NOT force flip; user double-clicks center to open/close.
+              // ✅ CHANGE: All Lines should remain flipped showing lines once there
               mode = "allLines";
-              flipped = false;
+              flipped = true;
 
               sportsMenuEl.classList.remove("open");
               renderScreen();
@@ -2712,7 +2708,6 @@
 
         if (clickedCard || clickedBack || clickedUserMenu || clickedLogoMenu || clickedAuth) return;
 
-        // bottom-left back
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         if (e.clientX < vw * 0.25 && e.clientY > vh * 0.75) handleGlobalBack();
