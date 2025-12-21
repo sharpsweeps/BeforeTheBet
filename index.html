@@ -305,12 +305,6 @@
         .card-click-area { max-width: 420px; }
       }
 
-      /* ✅ CHANGE: enlarge ONLY Line Details page to match other screens better */
-      body.line-details-mode .card-click-area { max-width: 460px; }
-      @media (min-width: 1024px) {
-        body.line-details-mode .card-click-area { max-width: 520px; }
-      }
-
       .card, .stack-card {
         position: absolute;
         inset: 0;
@@ -479,6 +473,64 @@
         letter-spacing: 0.14em;
         font-weight: 900;
       }
+
+      /* ✅ CHANGE: Line Details advanced features carrot menu */
+      .details-menu-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin: 2px 0 10px;
+        position: relative;
+      }
+      .details-menu-wrapper {
+        position: relative;
+        display: inline-flex;
+      }
+      .details-menu-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.04);
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      html[data-theme="dark"] .details-menu-button {
+        background: rgba(148, 163, 184, 0.10);
+        border-color: #1f2937;
+      }
+      .details-menu {
+        position: absolute;
+        right: 0;
+        top: 115%;
+        background: var(--card);
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        box-shadow: 0 18px 40px var(--shadow2);
+        min-width: 260px;
+        padding: 6px 0;
+        display: none;
+        z-index: 80;
+      }
+      .details-menu.open { display: block; }
+      .details-menu-item {
+        padding: 8px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        color: var(--text);
+        user-select: none;
+        display:flex;
+        align-items:center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .details-menu-item:hover { background: rgba(15, 23, 42, 0.04); }
+      html[data-theme="dark"] .details-menu-item:hover { background: #0f172a; }
+      .details-menu-sep { border-top: 1px solid var(--border); margin: 6px 0; }
 
       /* Toast */
       .swipe-toast {
@@ -668,7 +720,6 @@
 
       @media (max-width: 480px) {
         .card-click-area { max-width: 340px; }
-        body.line-details-mode .card-click-area { max-width: 360px; }
         .sport-logo-circle { width: 104px; height: 104px; font-size: 36px; }
         .swipe-toast { font-size: 11px; max-width: 90%; white-space: normal; text-align: center; }
       }
@@ -848,17 +899,20 @@
       let currentLineDetailMeta = null;
       let currentLineDetailStats = null;
 
+      // ✅ CHANGE: Line Details advanced features carrot menu state
+      let detailsMenuOpen = false;
+
       // Auth
       let supa = null;
       let currentUser = null; // { id, email }
       let isAuthReady = false;
 
       // Bias storage (in-memory mirror)
-      // key -> { key, sportId, sportName, matchupName, lineLabel, category, book, status, vote, createdAt, updatedAt, disabled }
+      // key -> { key, ... lastSwipedDayId }
       let biasStore = {};
 
       // keep backend total count, but reset session progress on sign-out/sign-in (blue until 5 swipes)
-      let sessionSwipeCount = 0;  // used ONLY for unlock UI
+      let sessionSwipeCount = 0;  // used ONLY for unlock UI (resets at 3AM EST)
       let backendSwipeCount = 0;  // stored in DB (kept across sign outs)
 
       // ✅ CHANGE: Tier + Daily Swipe Cap tracking (resets at 3AM EST)
@@ -1181,12 +1235,10 @@
         const targetLabel = `${String(targetMonth).padStart(2,"0")}/${String(targetDay).padStart(2,"0")}/${targetYear} ${String(DAILY_RESET_HOUR_EST).padStart(2,"0")}:00:00`;
         const targetLocal = new Date(new Date(targetLabel).toLocaleString("en-US", { timeZone: EST_TZ }));
 
-        // targetLocal is a Date in *your* local tz representing the EST time moment
         return Math.max(500, targetLocal.getTime() - now.getTime());
       }
 
       async function runDailySnapshotIfDue() {
-        // Placeholder snapshot: we store a minimal immutable record keyed to the EST “swipe day”
         const dayId = getSwipeDayIdEST();
         const snapshotKey = currentUser ? `btb_snapshot_${currentUser.id}_${dayId}` : `btb_snapshot_guest_${dayId}`;
         if (localStorage.getItem(snapshotKey)) return;
@@ -1235,6 +1287,11 @@
           loadDailySwipeState(); // resets if the dayId rolled
           await persistDailySwipeCount();
           await runDailySnapshotIfDue();
+
+          // ✅ CHANGE: reset session swipe progress at 3AM EST (blue until 5 swipes)
+          sessionSwipeCount = 0;
+          try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
           scheduleNext3amJobs();
           renderScreen();
         }, delay);
@@ -1257,7 +1314,8 @@
         const fill = document.createElement("div");
         fill.className = "sentiment-bar-fill";
 
-        const unlocked = isCommunityUnlocked();
+        // ✅ CHANGE: allow saved lines (MyBias/MyLocks/MyArchive) to show advanced bias display even before 5 swipes
+        const unlocked = isCommunityUnlocked() || (meta && meta.forceUnlocked === true);
 
         const displayConf = unlocked ? (typeof confidentPct === "number" ? confidentPct : 50) : 50;
         const displayDoubt = 100 - displayConf;
@@ -1442,6 +1500,8 @@
         const baseLines = matchup.lines || [];
         let lines = baseLines.slice();
 
+        const todayId = getSwipeDayIdEST();
+
         if (allLines) {
           let altCounter = 1;
           while (lines.length < 14 && baseLines.length > 0) {
@@ -1469,7 +1529,8 @@
 
             const withMeta = list.map((ln) => {
               const key = makeLineKey({ sportId: sport.id, matchupName: matchup.name, label: ln.label, book: (ln.book || "Best Available") });
-              return { ln, swiped: !!(biasStore[key] && biasStore[key].vote) };
+              const it = biasStore[key];
+              return { ln, swiped: !!(it && it.lastSwipedDayId === todayId) };
             });
 
             const unswiped = withMeta.filter(x => !x.swiped).map(x => x.ln);
@@ -1488,7 +1549,8 @@
           const top = lines.slice(0, 5);
           const withMeta = top.map((ln) => {
             const key = makeLineKey({ sportId: sport.id, matchupName: matchup.name, label: ln.label, book: (ln.book || "Best Available") });
-            return { ln, swiped: !!(biasStore[key] && biasStore[key].vote) };
+            const it = biasStore[key];
+            return { ln, swiped: !!(it && it.lastSwipedDayId === todayId) };
           });
 
           const unswiped = withMeta.filter(x => !x.swiped).map(x => x.ln);
@@ -1524,6 +1586,8 @@
 
         const key = makeLineKey({ sportId: sport.id, matchupName: matchup.name, label: ln.label, book: meta.book });
         const already = biasStore[key];
+        const todayId = getSwipeDayIdEST();
+        const swipedToday = !!(already && already.lastSwipedDayId === todayId);
 
         const top = document.createElement("div");
         top.className = "matchup-top";
@@ -1562,9 +1626,12 @@
           const youRow = document.createElement("div");
           youRow.className = "matchup-line";
           youRow.style.marginTop = "4px";
-          youRow.textContent = `Your pick: ${already.vote === "confident" ? "Confident ✅" : "Doubt It 🤔"} • In MyBias`;
+          youRow.textContent = `Your pick: ${already.vote === "confident" ? "Confident ✅" : "Doubt It 🤔"} • In ${already.status === "lock" ? "MyLocks" : (already.status === "archived" ? "MyArchive" : "MyBias")}`;
           card.appendChild(youRow);
+        }
 
+        // ✅ CHANGE: only grey/disable if swiped TODAY (daily reset at 3AM EST clears this)
+        if (swipedToday) {
           card.classList.add("disabled");
         }
 
@@ -1646,7 +1713,7 @@
           card.appendChild(top);
 
           card.appendChild(buildSideBiasUI(
-            { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book },
+            { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book, forceUnlocked: true },
             item.communityConfident ?? 50,
             item.communityDoubt ?? 50
           ));
@@ -1750,7 +1817,7 @@
             card.appendChild(top);
 
             card.appendChild(buildSideBiasUI(
-              { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book },
+              { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book, forceUnlocked: true },
               item.communityConfident ?? 50,
               item.communityDoubt ?? 50
             ));
@@ -1857,7 +1924,7 @@
           card.appendChild(top);
 
           card.appendChild(buildSideBiasUI(
-            { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book },
+            { sportIndex: item.sportIndex, matchupIndex: item.matchupIndex, label: item.lineLabel, category: item.category, book: item.book, forceUnlocked: true },
             item.communityConfident ?? 50,
             item.communityDoubt ?? 50
           ));
@@ -1894,6 +1961,41 @@
         indexIndicatorBack.textContent = "";
       }
 
+      // ✅ CHANGE: line details carrot menu (advanced features access)
+      function buildLineDetailsFeatureItems() {
+        const tier = currentTier;
+
+        const common = [
+          { label: "Consensus label", pill: "On", onClick: () => openModal({ title: "Consensus label", body: "Display-only consensus label for this line.", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Multi-book odds", pill: "On", onClick: () => openModal({ title: "Multi-book odds", body: "Current odds by book (placeholder in demo).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Movement indicator", pill: "On", onClick: () => openModal({ title: "Movement indicator", body: "Net movement since open (placeholder in demo).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+        ];
+
+        const plus = [
+          { label: "Watchlist", pill: "Plus", onClick: () => openModal({ title: "Watchlist", body: "Watchlist is planned (cap applies in Plus).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Light history preview", pill: "Plus", onClick: () => openModal({ title: "Light history preview", body: "Previous day snapshot (planned). Pro unlocks full history.", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Alerts (limited)", pill: "Plus", onClick: () => openModal({ title: "Alerts", body: "Limited alerts (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+        ];
+
+        const pro = [
+          { label: "Full bias history", pill: "Pro", onClick: () => openModal({ title: "Full bias history", body: "Timeline + snapshots + line versions (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Before/After move view", pill: "Pro", onClick: () => openModal({ title: "Before/After move", body: "Bias immediately before vs after line move (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "What changed", pill: "Pro", onClick: () => openModal({ title: "What changed", body: "Moved lines, bias flips, new lines (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+        ];
+
+        const elite = [
+          { label: "Review mode", pill: "Elite", onClick: () => openModal({ title: "Review mode", body: "Post-event retrospective learning mode (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Volatility indicator", pill: "Elite", onClick: () => openModal({ title: "Volatility indicator", body: "Low/Medium/High volatility + index (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+          { label: "Unlimited alerts", pill: "Elite", onClick: () => openModal({ title: "Unlimited alerts", body: "TradingView-style alerts (planned).", actions: [{ label: "OK", variant: "primary", onClick: () => {} }] }) },
+        ];
+
+        let items = [...common];
+        if (tier === "PLUS" || tier === "PRO" || tier === "ELITE") items = items.concat(plus);
+        if (tier === "PRO" || tier === "ELITE") items = items.concat(pro);
+        if (tier === "ELITE") items = items.concat(elite);
+        return items;
+      }
+
       function renderLineDetailsBack() {
         const stats = currentLineDetailStats;
         const meta = currentLineDetailMeta;
@@ -1904,6 +2006,52 @@
         backFooterNoteEl.textContent = "";
 
         matchupsListEl.innerHTML = "";
+
+        // ✅ CHANGE: add carrot list on line details page
+        const row = document.createElement("div");
+        row.className = "details-menu-row";
+
+        const wrap = document.createElement("div");
+        wrap.className = "details-menu-wrapper";
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "details-menu-button";
+        btn.textContent = "Advanced Features ▾";
+
+        const menu = document.createElement("div");
+        menu.className = "details-menu" + (detailsMenuOpen ? " open" : "");
+
+        const items = buildLineDetailsFeatureItems();
+        items.forEach((it, idx) => {
+          const mi = document.createElement("div");
+          mi.className = "details-menu-item";
+          mi.innerHTML = `<span>${it.label}</span><span class="pill">${it.pill}</span>`;
+          mi.addEventListener("click", (e) => {
+            e.stopPropagation();
+            detailsMenuOpen = false;
+            menu.classList.remove("open");
+            it.onClick && it.onClick();
+          });
+          menu.appendChild(mi);
+
+          if (idx === 2) {
+            const sep = document.createElement("div");
+            sep.className = "details-menu-sep";
+            menu.appendChild(sep);
+          }
+        });
+
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          detailsMenuOpen = !detailsMenuOpen;
+          menu.classList.toggle("open", detailsMenuOpen);
+        });
+
+        wrap.appendChild(btn);
+        wrap.appendChild(menu);
+        row.appendChild(wrap);
+        matchupsListEl.appendChild(row);
 
         const c1 = document.createElement("div");
         c1.className = "matchup-card";
@@ -1959,6 +2107,9 @@
         previousModeBeforeLineDetails = mode === "lineDetails" ? previousModeBeforeLineDetails : mode;
         currentLineDetailMeta = meta;
         currentLineDetailStats = generateLineStats(meta);
+
+        // ✅ CHANGE: reset details carrot menu closed on open
+        detailsMenuOpen = false;
 
         mode = "lineDetails";
         flipped = true;
@@ -2148,7 +2299,6 @@
         async function finalizeSwipe(direction) {
           if (!requireLoginGuard()) return;
 
-          // ✅ CHANGE: enforce daily cap (resets at 3AM EST)
           loadDailySwipeState();
           const cap = getTierDailyCap();
           if (dailySwipeCount >= cap) {
@@ -2161,6 +2311,8 @@
             });
             return;
           }
+
+          const todayId = getSwipeDayIdEST();
 
           const key = makeLineKey({
             sportId: meta.sportId,
@@ -2184,25 +2336,27 @@
 
           const vote = direction === "right" ? "confident" : "doubt";
 
-          if (biasStore[key] && biasStore[key].vote) {
-            showToast("Already saved");
+          // ✅ CHANGE: swipes reset daily at 3AM EST:
+          // Only block if user already swiped THIS line TODAY
+          if (biasStore[key] && biasStore[key].lastSwipedDayId === todayId) {
+            showToast("Already swiped today");
             return;
           }
 
-          // ✅ CHANGE: daily swipe count increments (logged to backend), resets at 3AM EST by dayId rollover
-          dailySwipeDayId = getSwipeDayIdEST();
+          dailySwipeDayId = todayId;
           dailySwipeCount += 1;
           await persistDailySwipeCount();
 
-          // keep lifetime total and session unlock tracking
           sessionSwipeCount += 1;
           backendSwipeCount += 1;
           await persistBackendSwipeCount();
 
-          const status = "inbox";
-
           const communityConf = typeof ln.confident === "number" ? ln.confident : 50;
           const communityDoubt = typeof ln.doubt === "number" ? ln.doubt : 50;
+
+          // preserve existing status if line already exists (MyBias/MyLocks/MyArchive should remain)
+          const existingStatus = biasStore[key]?.status;
+          const status = existingStatus ? existingStatus : "inbox";
 
           await upsertBias({
             key,
@@ -2218,10 +2372,11 @@
             status,
             communityConfident: communityConf,
             communityDoubt: communityDoubt,
+            lastSwipedDayId: todayId,
           });
 
           markCardDisabledAndDrop(card);
-          showToast("Added to MyBias ✅");
+          showToast(existingStatus ? "Updated today ✅" : "Added to MyBias ✅");
 
           if (isCommunityUnlocked()) renderScreen();
         }
@@ -2290,7 +2445,6 @@
           sessionSwipeCount = 0;
         }
 
-        // ✅ CHANGE: tier + daily state
         loadTier();
         loadDailySwipeState();
       }
@@ -2299,7 +2453,6 @@
         try { localStorage.setItem(localKey(), JSON.stringify(biasStore)); } catch {}
         try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
 
-        // ✅ CHANGE: tier + daily state
         try { saveTier(); } catch {}
         try { saveDailySwipeState(); } catch {}
       }
@@ -2333,10 +2486,10 @@
             communityDoubt: row.community_doubt ?? 50,
             createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
             updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
+            // lastSwipedDayId stays local-only unless you extend DB schema later
           };
         });
 
-        // pull meta counts out of store
         const countKey = "__user_swipe_count__";
         const countRow = obj[countKey];
         if (countRow && typeof countRow.vote === "string") {
@@ -2345,7 +2498,6 @@
           delete obj[countKey];
         }
 
-        // ✅ CHANGE: load today’s daily swipe count (resets by dayId)
         const todayId = getSwipeDayIdEST();
         const dailyKey = `__daily_swipes__|${todayId}`;
         const dailyRow = obj[dailyKey];
@@ -2356,8 +2508,6 @@
           delete obj[dailyKey];
           saveDailySwipeState();
         }
-
-        // snapshots remain immutable; no need to parse here
 
         biasStore = obj;
 
@@ -2414,6 +2564,8 @@
           communityDoubt: item.communityDoubt ?? 50,
           createdAt: biasStore[item.key]?.createdAt || now,
           updatedAt: now,
+          // ✅ CHANGE: used for daily reset of greyed-out lines
+          lastSwipedDayId: item.lastSwipedDayId || biasStore[item.key]?.lastSwipedDayId || null,
         };
 
         saveLocal();
@@ -2488,8 +2640,6 @@
        * SCREEN RENDER
        *******************************/
       function renderScreen() {
-        document.body.classList.toggle("line-details-mode", mode === "lineDetails");
-
         if (mode === "sports") {
           titleEl.textContent = "Select Your Sport";
           subtitleEl.textContent = "Double-click center to open. (Swiping requires login.)";
@@ -2834,7 +2984,6 @@
       function buildUserDropdown() {
         userDropdown.innerHTML = "";
 
-        // ✅ CHANGE: Tier selector (temporary) in the top caret menu
         const tierItem = document.createElement("div");
         tierItem.className = "user-dropdown-item";
         tierItem.innerHTML = `<span>Tier</span><span class="pill">${currentTier}</span>`;
@@ -2922,7 +3071,6 @@
                   label: "Sign out",
                   variant: "danger",
                   onClick: async () => {
-                    // ✅ CHANGE: explicitly clear this user's stored lines/session progress BEFORE currentUser null
                     const uid = currentUser.id;
                     try { localStorage.setItem(`btb_store_${uid}`, "{}"); } catch {}
                     try { localStorage.setItem(`btb_session_count_${uid}`, "0"); } catch {}
@@ -2935,7 +3083,6 @@
                     biasStore = {};
                     sessionSwipeCount = 0;
 
-                    // daily swipes are NOT reset on sign-out (they reset at 3AM EST)
                     loadTier();
                     loadDailySwipeState();
 
@@ -2972,6 +3119,17 @@
         const clickedUserMenu = userMenuWrapper.contains(target);
         const clickedLogoMenu = logoGroup.contains(target);
         const clickedAuth = authOverlay.contains(target);
+
+        // ✅ CHANGE: close line details features menu when clicking outside
+        if (mode === "lineDetails") {
+          const detailsMenuNode = document.querySelector(".details-menu");
+          const detailsBtnNode = document.querySelector(".details-menu-button");
+          const clickedDetails = (detailsMenuNode && detailsMenuNode.contains(target)) || (detailsBtnNode && detailsBtnNode.contains(target));
+          if (!clickedDetails) {
+            detailsMenuOpen = false;
+            if (detailsMenuNode) detailsMenuNode.classList.remove("open");
+          }
+        }
 
         if (!clickedLogoMenu) sportsMenuEl.classList.remove("open");
         if (!clickedUserMenu) userDropdown.classList.remove("open");
@@ -3018,7 +3176,10 @@
           isAuthReady = true;
           hideAuth();
 
+          // ✅ CHANGE: reset session swipe progress at sign-in (blue until 5 swipes)
           sessionSwipeCount = 0;
+          try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
           loadLocal();
 
           const dbOK = await tryFetchDB();
@@ -3028,7 +3189,6 @@
           buildSportsMenu();
           renderScreen();
 
-          // ✅ CHANGE: schedule 3AM EST jobs
           scheduleNext3amJobs();
           await runDailySnapshotIfDue();
 
@@ -3040,7 +3200,10 @@
             currentUser = { id: session.user.id, email: session.user.email };
             hideAuth();
 
+            // ✅ CHANGE: reset session swipe progress at sign-in (blue until 5 swipes)
             sessionSwipeCount = 0;
+            try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
             loadLocal();
 
             const dbOK = await tryFetchDB();
@@ -3102,7 +3265,10 @@
         currentUser = { id: data.session.user.id, email: data.session.user.email };
         hideAuth();
 
+        // ✅ CHANGE: reset session swipe progress at sign-in (blue until 5 swipes)
         sessionSwipeCount = 0;
+        try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
         loadLocal();
 
         const dbOK = await tryFetchDB();
@@ -3145,7 +3311,10 @@
           currentUser = { id: data.session.user.id, email: data.session.user.email };
           hideAuth();
 
+          // ✅ CHANGE: reset session swipe progress at sign-in (blue until 5 swipes)
           sessionSwipeCount = 0;
+          try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
           loadLocal();
 
           const dbOK = await tryFetchDB();
