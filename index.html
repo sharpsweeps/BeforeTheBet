@@ -1239,14 +1239,45 @@
             header.textContent = CATEGORY_LABELS[catKey] || "Other";
             matchupsListEl.appendChild(header);
 
-            list.forEach((ln) => {
+            /* =============================================
+               ✅ CHANGE: ensure already-swiped lines fall to bottom
+               ============================================= */
+            const withMeta = list.map((ln) => {
+              const key = makeLineKey({ sportId: sport.id, matchupName: matchup.name, label: ln.label, book: (ln.book || "Best Available") });
+              return { ln, swiped: !!(biasStore[key] && biasStore[key].vote) };
+            });
+
+            const unswiped = withMeta.filter(x => !x.swiped).map(x => x.ln);
+            const swiped = withMeta.filter(x => x.swiped).map(x => x.ln);
+
+            unswiped.forEach((ln) => {
+              const card = buildLineCard({ ln, sport, matchup, context: allLines ? "allLines" : "matchupsTop" });
+              matchupsListEl.appendChild(card);
+            });
+            swiped.forEach((ln) => {
               const card = buildLineCard({ ln, sport, matchup, context: allLines ? "allLines" : "matchupsTop" });
               matchupsListEl.appendChild(card);
             });
           });
         } else {
-          // Top 5
-          lines.slice(0, 5).forEach((ln) => {
+          /* =============================================
+             ✅ CHANGE: ensure already-swiped top lines fall to bottom
+             ============================================= */
+          const top = lines.slice(0, 5);
+          const withMeta = top.map((ln) => {
+            const key = makeLineKey({ sportId: sport.id, matchupName: matchup.name, label: ln.label, book: (ln.book || "Best Available") });
+            return { ln, swiped: !!(biasStore[key] && biasStore[key].vote) };
+          });
+
+          const unswiped = withMeta.filter(x => !x.swiped).map(x => x.ln);
+          const swiped = withMeta.filter(x => x.swiped).map(x => x.ln);
+
+          unswiped.forEach((ln) => {
+            const card = buildLineCard({ ln, sport, matchup, context: "matchupsTop" });
+            matchupsListEl.appendChild(card);
+          });
+
+          swiped.forEach((ln) => {
             const card = buildLineCard({ ln, sport, matchup, context: "matchupsTop" });
             matchupsListEl.appendChild(card);
           });
@@ -1519,7 +1550,7 @@
             card.appendChild(youRow);
 
             /* =============================================
-               ✅ CHANGE #2: per-line PLACE BET button (inside each lock card)
+               per-line PLACE BET button (inside each lock card)
                ============================================= */
             const betBtn = document.createElement("button");
             betBtn.className = "sportsbook-cta-btn";
@@ -1551,11 +1582,6 @@
 
             matchupsListEl.appendChild(card);
           });
-
-          /* =============================================
-             ✅ CHANGE #2 (continued): remove the per-book footer button
-             If you want to keep it, you can re-add your old block here.
-             ============================================= */
         });
       }
 
@@ -1801,12 +1827,6 @@
         card.addEventListener("pointerleave", () => clearTimeout(holdTimer));
       }
 
-      /* =============================================
-         ✅ CHANGE #1: Replace attachSwipeAndHoldHandlers
-         - Robust swipe detection inside scroll containers
-         - Prevents accidental vertical scroll from breaking swipe
-         - Cancels hold once swipe intent is detected
-         ============================================= */
       function attachSwipeAndHoldHandlers(card, meta, ln, context) {
         let pointerId = null;
         let startX = 0;
@@ -2351,8 +2371,15 @@
           return;
         }
 
-        // In hub pages: center toggles flip only
-        if (mode === "mybias" || mode === "locks" || mode === "archive") {
+        // In hub pages:
+        if (mode === "mybias") {
+          // =============================================
+          // ✅ CHANGE: MyBias one click should NOT flip card
+          // =============================================
+          return;
+        }
+
+        if (mode === "locks" || mode === "archive") {
           if (zone >= 0.2 && zone <= 0.8) {
             flipped = !flipped;
             renderCardFlipState();
@@ -2403,7 +2430,27 @@
           return;
         }
 
-        if ((mode === "matchups" || mode === "allLines") && zone >= 0.2 && zone <= 0.8) {
+        if (mode === "matchups") {
+          // =============================================
+          // ✅ CHANGE: On Top Lines (back), dblclick perimeter opens ALL LINES
+          // (interpreted as: while flipped open showing Top Lines)
+          // =============================================
+          if (flipped === true && (zone < 0.2 || zone > 0.8)) {
+            mode = "allLines";
+            flipped = true; // keep lines open
+            renderScreen();
+            return;
+          }
+
+          // dblclick center toggles flip (open/close Top Lines)
+          if (zone >= 0.2 && zone <= 0.8) {
+            flipped = !flipped;
+            renderCardFlipState();
+            return;
+          }
+        }
+
+        if (mode === "allLines" && zone >= 0.2 && zone <= 0.8) {
           // toggle flip, do NOT auto-close after swipes
           flipped = !flipped;
           renderCardFlipState();
@@ -2426,6 +2473,91 @@
           }, DOUBLE_CLICK_DELAY);
         }
       });
+
+      /* =============================================
+         ✅ CHANGE: Swipe between GAMES on the NFL Game Screen (and other game screens)
+         - Swipe left/right on the front (not flipped) to move between matchups
+         - Does NOT interfere with scrolling lines (only active when flipped=false)
+         ============================================= */
+      (function attachCardAreaGameSwipe() {
+        let down = false;
+        let startX = 0;
+        let startY = 0;
+        let lastX = 0;
+        let lastY = 0;
+        let pointerId = null;
+        let intentLocked = false;
+
+        const SWIPE_THRESHOLD = 50;
+        const INTENT_THRESHOLD = 10;
+
+        cardClickArea.addEventListener("pointerdown", (e) => {
+          // only allow game/sport swipe when NOT flipped (so it doesn't interfere with lists)
+          if (flipped) return;
+
+          down = true;
+          intentLocked = false;
+          pointerId = e.pointerId;
+          startX = e.clientX;
+          startY = e.clientY;
+          lastX = startX;
+          lastY = startY;
+          try { cardClickArea.setPointerCapture(pointerId); } catch {}
+        });
+
+        cardClickArea.addEventListener("pointermove", (e) => {
+          if (!down) return;
+          if (pointerId !== e.pointerId) return;
+
+          lastX = e.clientX;
+          lastY = e.clientY;
+
+          const dx = lastX - startX;
+          const dy = lastY - startY;
+
+          if (!intentLocked) {
+            if (Math.abs(dx) > INTENT_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+              intentLocked = true;
+              e.preventDefault();
+            } else if (Math.abs(dy) > INTENT_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
+              // vertical intent: ignore (let page scroll if any)
+              down = false;
+            }
+          }
+
+          if (intentLocked) e.preventDefault();
+        }, { passive: false });
+
+        cardClickArea.addEventListener("pointerup", (e) => {
+          if (!down) return;
+          down = false;
+          if (pointerId !== e.pointerId) return;
+
+          const dx = lastX - startX;
+          const dy = lastY - startY;
+
+          if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
+
+          // Left swipe: next, Right swipe: prev (natural deck feel)
+          if (mode === "matchups" || mode === "allLines") {
+            if (dx < 0) currentMatchupIndex = getNextIndex(currentSport().matchups.length, currentMatchupIndex);
+            else currentMatchupIndex = getPrevIndex(currentSport().matchups.length, currentMatchupIndex);
+            flipped = false;
+            renderScreen();
+            return;
+          }
+
+          if (mode === "sports") {
+            if (dx < 0) currentSportIndex = getNextIndex(SPORTS.length, currentSportIndex);
+            else currentSportIndex = getPrevIndex(SPORTS.length, currentSportIndex);
+            flipped = false;
+            renderScreen();
+            return;
+          }
+        });
+
+        cardClickArea.addEventListener("pointercancel", () => { down = false; });
+      })();
 
       /*******************************
        * MENUS
