@@ -351,6 +351,7 @@
 
       .matchup-card.is-disabled {
         opacity: 0.42;
+        pointer-events: auto; /* allow hold-to-edit */
       }
 
       .matchup-card.swipe-right {
@@ -451,13 +452,13 @@
         display: none;
         align-items: center;
         justify-content: center;
-        z-index: 130;
+        z-index: 100;
       }
       #auth-overlay.open { display: flex; }
 
       .auth-card {
         width: 100%;
-        max-width: 390px;
+        max-width: 380px;
         background: var(--card);
         border-radius: 24px;
         border: 1px solid var(--border);
@@ -479,30 +480,27 @@
         outline: none;
       }
 
-      .auth-actions { display:flex; gap: 10px; margin-top: 8px; }
-      .auth-actions button {
+      .auth-actions { display:flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+      .auth-primary {
         flex: 1;
         padding: 10px 12px;
         border-radius: 999px;
         border: none;
         cursor: pointer;
         font-weight: 900;
+        background: var(--blue);
+        color: #fff;
       }
-      .auth-primary { background: var(--blue); color: #fff; }
-      .auth-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
-
-      .auth-actions-2 { display:flex; gap: 10px; margin-top: 10px; }
-      .auth-actions-2 button {
+      .auth-secondary {
         flex: 1;
         padding: 10px 12px;
         border-radius: 999px;
         border: 1px solid var(--border);
         cursor: pointer;
         font-weight: 900;
-        background: rgba(148, 163, 184, 0.08);
+        background: transparent;
         color: var(--text);
       }
-      .auth-actions-2 button:hover { background: rgba(148, 163, 184, 0.14); }
 
       /* In-app modal */
       #modal-overlay {
@@ -627,32 +625,28 @@
     <!-- Toast -->
     <div class="toast" id="toast"></div>
 
-    <!-- Auth Overlay (4 buttons = the last working style you referenced) -->
+    <!-- Auth Overlay -->
     <div id="auth-overlay">
       <div class="auth-card">
         <div class="auth-title">Sign in to swipe</div>
         <div class="auth-sub">
-          Swiping is locked until you sign in. This is Supabase Auth. If email confirmation is enabled,
-          use Magic Link or confirm your email.
+          Swiping is locked until you sign in. If Supabase email confirmations are enabled, “Create” may require verification before you can sign in.
         </div>
 
         <div class="auth-field">
           <label>Email</label>
-          <input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email" />
+          <input id="auth-email" type="email" placeholder="you@example.com" />
         </div>
         <div class="auth-field">
           <label>Password</label>
-          <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+          <input id="auth-password" type="password" placeholder="••••••••" />
         </div>
 
+        <!-- ONLY 3 BUTTONS: Sign In / Create / Reset Password -->
         <div class="auth-actions">
           <button id="auth-signin" class="auth-primary" type="button">Sign In</button>
           <button id="auth-signup" class="auth-secondary" type="button">Create</button>
-        </div>
-
-        <div class="auth-actions-2">
-          <button id="auth-magiclink" type="button">Magic Link</button>
-          <button id="auth-reset" type="button">Reset Password</button>
+          <button id="auth-reset" class="auth-secondary" type="button">Reset Password</button>
         </div>
       </div>
     </div>
@@ -674,9 +668,7 @@
        * CONFIG
        ************************************************************/
       const SUPABASE_URL = "https://kmgrpyvcxonfjswxusbt.supabase.co";
-      const SUPABASE_ANON_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZ3JweXZjeG9uZmpzd3h1c2J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NjE4NTIsImV4cCI6MjA4MTIzNzg1Mn0.teDypPoT-TMPkIDGemYVRfCNdmK0uAbOCDaiHfNmgac";
-
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZ3JweXZjeG9uZmpzd3h1c2J0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NjE4NTIsImV4cCI6MjA4MTIzNzg1Mn0.teDypPoT-TMPkIDGemYVRfCNdmK0uAbOCDaiHfNmgac";
       const SWIPES_TABLE = "swipes";
 
       const CATEGORY_LABELS = {
@@ -740,31 +732,14 @@
       let previousModeBeforeDetails = null;
       let detailsMeta = null;
 
-      // Auth + data
       let supabaseClient = null;
       let authedUser = null;
 
-      // Local cache of user items (comes from Supabase after login)
-      // keyed by swipe_key
-      const userItems = {}; // { [key]: { ...row } }
+      // Local cache of user items (Supabase -> device)
+      const userItems = {}; // { [key]: row }
 
-      // Fallback store if Supabase table isn't ready (per user id)
-      function fallbackKey() {
-        const id = authedUser?.id || "anon";
-        return `btb_swipes_fallback_${id}`;
-      }
-      function fallbackLoad() {
-        try {
-          const raw = localStorage.getItem(fallbackKey());
-          if (!raw) return [];
-          const arr = JSON.parse(raw);
-          return Array.isArray(arr) ? arr : [];
-        } catch { return []; }
-      }
-      function fallbackSaveAll() {
-        try {
-          localStorage.setItem(fallbackKey(), JSON.stringify(Object.values(userItems)));
-        } catch {}
+      function getUserSwipeCount() {
+        return Object.values(userItems).length;
       }
 
       /************************************************************
@@ -805,7 +780,6 @@
       const authPasswordEl = document.getElementById("auth-password");
       const authSignInBtn = document.getElementById("auth-signin");
       const authSignUpBtn = document.getElementById("auth-signup");
-      const authMagicBtn = document.getElementById("auth-magiclink");
       const authResetBtn = document.getElementById("auth-reset");
 
       const modalOverlay = document.getElementById("modal-overlay");
@@ -822,7 +796,7 @@
         toastEl.textContent = msg;
         toastEl.classList.add("show");
         clearTimeout(showToast._t);
-        showToast._t = setTimeout(() => toastEl.classList.remove("show"), 1200);
+        showToast._t = setTimeout(() => toastEl.classList.remove("show"), 1400);
       }
 
       function openModal({ title, body, actions }) {
@@ -847,6 +821,14 @@
         if (e.target === modalOverlay) closeModal();
       });
 
+      function openAuthOverlay(reasonText) {
+        authOverlayEl.classList.add("open");
+        if (reasonText) showToast(reasonText);
+      }
+      function closeAuthOverlay() {
+        authOverlayEl.classList.remove("open");
+      }
+
       function getNextIndex(length, current) { return (current + 1) % length; }
       function getPrevIndex(length, current) { return current === 0 ? length - 1 : current - 1; }
 
@@ -862,14 +844,10 @@
 
       function isAuthed() { return !!authedUser; }
 
+      // Must be logged in to swipe — in-app UI only
       function requireAuthOrOpen() {
         if (!isAuthed()) {
-          authOverlayEl.classList.add("open");
-          openModal({
-            title: "Sign in required",
-            body: "You must sign in before you can swipe.",
-            actions: [{ label: "OK", onClick: () => {} }],
-          });
+          openAuthOverlay("Sign in required to swipe");
           return false;
         }
         return true;
@@ -899,32 +877,34 @@
       });
 
       /************************************************************
-       * SUPABASE (LOGIN FIX: robust init + auth change listener)
+       * SUPABASE
        ************************************************************/
       function initSupabase() {
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: { persistSession: true, autoRefreshToken: true },
         });
 
-        // IMPORTANT: register listener AFTER client exists (this was breaking in earlier loops)
-        supabaseClient.auth.onAuthStateChange(async () => {
-          await refreshAuth();
+        // ✅ CRITICAL FIX: always register auth state listener immediately
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+          authedUser = session?.user || null;
+          if (authedUser) {
+            closeAuthOverlay();             // ✅ ensures overlay disappears on successful session
+            await loadUserSwipes();
+          }
+          updateUserMenuLabel();
+          buildUserDropdown();
           renderScreen();
         });
       }
 
       async function refreshAuth() {
-        if (!supabaseClient) return;
         const { data, error } = await supabaseClient.auth.getSession();
         if (error) console.warn("getSession error:", error);
 
         authedUser = data?.session?.user || null;
 
-        // Clear cache every time and reload fresh so device sync works.
-        for (const k of Object.keys(userItems)) delete userItems[k];
-
         if (authedUser) {
-          authOverlayEl.classList.remove("open");
+          closeAuthOverlay();               // ✅ ensures overlay is removed if session exists
           await loadUserSwipes();
         }
         updateUserMenuLabel();
@@ -934,26 +914,24 @@
       async function loadUserSwipes() {
         if (!authedUser) return;
 
-        // Try Supabase first
+        // Graceful fallback if table isn't set up yet
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
           .select("*")
           .eq("user_id", authedUser.id);
 
         if (error) {
-          console.warn("loadUserSwipes supabase error (fallback to local):", error);
-          // Fallback
-          const arr = fallbackLoad();
-          for (const row of arr) userItems[row.swipe_key] = row;
+          console.warn("loadUserSwipes error:", error);
+          showToast("Swipes table missing? (Supabase)");
           return;
         }
 
+        // reset cache then refill to stay in sync
+        for (const k of Object.keys(userItems)) delete userItems[k];
         for (const row of data || []) userItems[row.swipe_key] = row;
-        fallbackSaveAll(); // keep a local backup too
       }
 
       async function saveSwipeRow(row) {
-        // Upsert on (user_id, swipe_key) — if table not set, fallback
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
           .upsert(row, { onConflict: "user_id,swipe_key" })
@@ -961,66 +939,31 @@
           .single();
 
         if (error) {
-          console.warn("saveSwipeRow supabase error (fallback):", error);
-          userItems[row.swipe_key] = row;
-          fallbackSaveAll();
-          return { data: row, error: null, usedFallback: true };
+          console.warn("saveSwipeRow error:", error);
+          return { data: null, error };
         }
-
         userItems[data.swipe_key] = data;
-        fallbackSaveAll();
-        return { data, error: null, usedFallback: false };
+        return { data, error: null };
       }
 
       async function updateStatus(key, status) {
         const existing = userItems[key];
         if (!existing) return;
 
-        const updated_at = new Date().toISOString();
-
-        // Supabase update
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
-          .update({ status, updated_at })
+          .update({ status, updated_at: new Date().toISOString() })
           .eq("user_id", authedUser.id)
           .eq("swipe_key", key)
           .select()
           .single();
 
         if (error) {
-          console.warn("updateStatus supabase error (fallback):", error);
-          userItems[key] = { ...existing, status, updated_at };
-          fallbackSaveAll();
+          console.warn("updateStatus error:", error);
+          showToast("Update failed");
           return;
         }
-
         userItems[key] = data;
-        fallbackSaveAll();
-      }
-
-      async function updateVoteOnly(key, newVote) {
-        const existing = userItems[key];
-        if (!existing) return;
-
-        const updated_at = new Date().toISOString();
-
-        const { data, error } = await supabaseClient
-          .from(SWIPES_TABLE)
-          .update({ vote: newVote, updated_at })
-          .eq("user_id", authedUser.id)
-          .eq("swipe_key", key)
-          .select()
-          .single();
-
-        if (error) {
-          console.warn("updateVoteOnly supabase error (fallback):", error);
-          userItems[key] = { ...existing, vote: newVote, updated_at };
-          fallbackSaveAll();
-          return;
-        }
-
-        userItems[key] = data;
-        fallbackSaveAll();
       }
 
       async function deleteLock(key) {
@@ -1031,25 +974,19 @@
           .eq("swipe_key", key);
 
         if (error) {
-          console.warn("deleteLock supabase error (fallback):", error);
-          delete userItems[key];
-          fallbackSaveAll();
+          console.warn("deleteLock error:", error);
+          showToast("Remove failed");
           return;
         }
         delete userItems[key];
-        fallbackSaveAll();
       }
 
       /************************************************************
        * BIAS DISPLAY LOGIC
        ************************************************************/
-      function getUserSwipeCount() {
-        return Object.values(userItems).length;
-      }
-
       function getDisplayBias(meta, fallbackSharp, fallbackSweep) {
         const count = getUserSwipeCount();
-        if (count < 5) {
+        if (!authedUser || count < 5) {
           return { confident: 50, doubt: 50, color: "blue" };
         }
         const conf = typeof fallbackSharp === "number" ? fallbackSharp : 55;
@@ -1069,10 +1006,9 @@
         const fill = document.createElement("div");
         fill.className = "sentiment-bar-fill";
         fill.style.width = bias.confident + "%";
-        fill.style.background =
-          bias.color === "blue"
-            ? "linear-gradient(90deg, rgba(37,99,235,0.95), rgba(37,99,235,0.65))"
-            : "linear-gradient(90deg, rgba(22,163,74,0.95), rgba(22,163,74,0.65))";
+        fill.style.background = bias.color === "blue"
+          ? "linear-gradient(90deg, rgba(37,99,235,0.95), rgba(37,99,235,0.65))"
+          : "linear-gradient(90deg, rgba(22,163,74,0.95), rgba(22,163,74,0.65))";
 
         bg.appendChild(fill);
 
@@ -1095,34 +1031,22 @@
       }
 
       /************************************************************
-       * SWIPE / LONG PRESS (ONE implementation, no overrides)
-       * ✅ Fixes:
-       * - swipes register (pointer capture + no click conflicts)
-       * - MyBias swipes update status (no "already saved" blocking)
-       * - non-MyBias swipes save once then disable
-       * - long-press flips only that one line; long-press on locks removes it
+       * SWIPE / LONG PRESS
        ************************************************************/
       function attachLineInteractions(card, meta, context, fallbackSharp, fallbackSweep) {
         const key = makeSwipeKey(meta);
 
-        // Double click opens details
+        // Double click: open details
         card.addEventListener("dblclick", (e) => {
           e.preventDefault();
           e.stopPropagation();
           openLineDetails(meta, fallbackSharp, fallbackSweep);
         });
 
-        // Prevent main card click handler from stealing interaction
-        card.addEventListener("click", (e) => e.stopPropagation());
-
-        // Disable swipe again if already saved AND not MyBias (MyBias needs swipe to move)
-        const exists = !!userItems[key];
-        if (exists && context !== "mybias") {
-          card.classList.add("is-disabled");
-        }
-
+        // Long press: change bias OR remove from locks
         let pressTimer = null;
-        let downX = 0, downY = 0;
+        let downX = 0;
+        let downY = 0;
         let pointerDown = false;
         let pointerId = null;
 
@@ -1138,10 +1062,10 @@
           downX = e.clientX;
           downY = e.clientY;
 
-          try { card.setPointerCapture(pointerId); } catch {}
+          try { card.setPointerCapture(pointerId); } catch (_) {}
 
           clearPress();
-          pressTimer = setTimeout(async () => {
+          pressTimer = setTimeout(() => {
             clearPress();
             pointerDown = false;
 
@@ -1149,16 +1073,16 @@
 
             const item = userItems[key];
 
-            // Locks: long-press removes
+            // If in locks: long press removes from locks entirely
             if (context === "mylocks") {
               openModal({
                 title: "Remove from MyLocks?",
-                body: "This removes the lock from your profile (all devices).",
+                body: "This will remove the line from MyLocks (it will disappear on all devices).",
                 actions: [
                   { label: "Cancel", onClick: () => {} },
                   { label: "Remove", kind: "danger", onClick: async () => {
                       await deleteLock(key);
-                      showToast("Removed");
+                      showToast("Removed from MyLocks");
                       renderScreen();
                     }
                   },
@@ -1167,7 +1091,7 @@
               return;
             }
 
-            // Other lists: long-press flips ONLY this line’s vote
+            // Otherwise: flip vote for ONLY this line
             if (!item) {
               showToast("Swipe it once first");
               return;
@@ -1180,7 +1104,20 @@
                 { label: "Cancel", onClick: () => {} },
                 { label: "Flip", kind: "primary", onClick: async () => {
                     const newVote = item.vote === "confident" ? "doubt" : "confident";
-                    await updateVoteOnly(key, newVote);
+                    const { data, error } = await supabaseClient
+                      .from(SWIPES_TABLE)
+                      .update({ vote: newVote, updated_at: new Date().toISOString() })
+                      .eq("user_id", authedUser.id)
+                      .eq("swipe_key", key)
+                      .select()
+                      .single();
+
+                    if (error) {
+                      showToast("Flip failed");
+                      console.warn(error);
+                      return;
+                    }
+                    userItems[key] = data;
                     showToast("Bias flipped");
                     renderScreen();
                   }
@@ -1194,7 +1131,7 @@
           if (!pointerDown) return;
           const dx = Math.abs(e.clientX - downX);
           const dy = Math.abs(e.clientY - downY);
-          if (dx > 10 || dy > 10) clearPress(); // cancel long-press if swiping
+          if (dx > 10 || dy > 10) clearPress();
         });
 
         card.addEventListener("pointerup", async (e) => {
@@ -1203,67 +1140,62 @@
           if (!pointerDown) return;
           pointerDown = false;
 
+          if (!requireAuthOrOpen()) return;
+
           const dx = e.clientX - downX;
           const threshold = 42;
           if (Math.abs(dx) < threshold) return;
 
-          // MyLocks/MyArchives screens are management only (no swipe)
-          if (context === "mylocks" || context === "myarchives") return;
-
-          if (!requireAuthOrOpen()) return;
-
-          // RIGHT = confident, LEFT = doubt
-          const vote = dx > 0 ? "confident" : "doubt";
-
-          // Animate out
-          card.classList.add(dx > 0 ? "swipe-right" : "swipe-left");
-
-          // After animation, apply correct action
-          setTimeout(async () => {
-            // ✅ MyBias: item already exists; update status only
-            if (context === "mybias") {
-              const newStatus = vote === "confident" ? "lock" : "archived";
-              await updateStatus(key, newStatus);
+          // ✅ MyBias: update status only (no “already saved” block)
+          if (context === "mybias") {
+            const newStatus = dx > 0 ? "lock" : "archived";
+            await updateStatus(key, newStatus);
+            card.classList.add(dx > 0 ? "swipe-right" : "swipe-left");
+            setTimeout(() => {
               showToast(newStatus === "lock" ? "Moved to MyLocks" : "Moved to MyArchives");
               renderScreen();
-              return;
-            }
+            }, 190);
+            return;
+          }
 
-            // ✅ Other screens: first-time save only
-            if (userItems[key]) {
-              // If race condition / already saved, just disable & drop
-              showToast("Already saved");
-              renderScreen();
-              return;
-            }
+          // For other contexts: block re-swipe
+          const already = !!userItems[key];
+          if (already) {
+            showToast("Already saved (hold to flip bias)");
+            return;
+          }
 
-            const sport = SPORTS[meta.sportIndex];
-            const matchup = sport.matchups[meta.matchupIndex];
-            const book = meta.book || "Best Available";
+          const vote = dx > 0 ? "confident" : "doubt"; // RIGHT = confident, LEFT = doubt
+          const status = "inbox"; // new swipes always land in MyBias (inbox)
 
-            const row = {
-              user_id: authedUser.id,
-              swipe_key: key,
-              sport_id: sport.id,
-              matchup_name: matchup.name,
-              label: meta.label,
-              category: meta.category || "other",
-              book,
-              vote,
-              status: "inbox", // saved into MyBias by default
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+          const sport = SPORTS[meta.sportIndex];
+          const matchup = sport.matchups[meta.matchupIndex];
+          const book = meta.book || "Best Available";
 
-            await saveSwipeRow(row);
+          const row = {
+            user_id: authedUser.id,
+            swipe_key: key,
+            sport_id: sport.id,
+            matchup_name: matchup.name,
+            label: meta.label,
+            category: meta.category || "other",
+            book,
+            vote,
+            status,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
 
+          const saved = await saveSwipeRow(row);
+          if (saved.error) {
+            showToast("Save failed (check Supabase swipes table/unique constraint)");
+            console.warn(saved.error);
+            return;
+          }
+
+          card.classList.add(dx > 0 ? "swipe-right" : "swipe-left");
+          setTimeout(() => {
             showToast(vote === "confident" ? "✅ Confident" : "❌ Doubt it");
-
-            // Grey out + drop to bottom on current screen (then render to keep consistent)
-            card.classList.remove("swipe-right", "swipe-left");
-            card.classList.add("is-disabled");
-            if (card.parentElement) card.parentElement.appendChild(card);
-
             renderScreen();
           }, 190);
         });
@@ -1272,6 +1204,9 @@
           clearPress();
           pointerDown = false;
         });
+
+        // Prevent clicks from flipping main card
+        card.addEventListener("click", (e) => e.stopPropagation());
       }
 
       /************************************************************
@@ -1344,9 +1279,6 @@
             renderScreen();
           });
 
-          // prevent main click handler from reading this
-          card.addEventListener("click", (e) => e.stopPropagation());
-
           matchupsListEl.appendChild(card);
         });
       }
@@ -1374,11 +1306,6 @@
         matchupsListEl.innerHTML = "";
 
         const lines = (matchup.lines || []).slice(0, 6);
-
-        // Show already-saved lines at bottom (grey)
-        const active = [];
-        const saved = [];
-
         lines.forEach((ln) => {
           const meta = {
             sportIndex: currentSportIndex,
@@ -1387,13 +1314,7 @@
             category: ln.category || "other",
             book: ln.book || "Consensus",
           };
-          const key = makeSwipeKey(meta);
-          (userItems[key] ? saved : active).push({ ln, meta });
-        });
 
-        const ordered = [...active, ...saved];
-
-        ordered.forEach(({ ln, meta }) => {
           const key = makeSwipeKey(meta);
           const already = !!userItems[key];
 
@@ -1431,7 +1352,6 @@
           card.appendChild(buildBiasUI(meta, ln.sharp, ln.sweep));
 
           attachLineInteractions(card, meta, "matchupsTop", ln.sharp, ln.sweep);
-
           matchupsListEl.appendChild(card);
         });
       }
@@ -1448,7 +1368,6 @@
         const base = matchup.lines || [];
         let extended = base.slice();
 
-        // Demo: add some alternates
         let altCounter = 1;
         while (extended.length < 14 && base.length) {
           const t = base[(extended.length - base.length) % base.length];
@@ -1471,9 +1390,6 @@
           header.textContent = CATEGORY_LABELS[cat] || "Other";
           matchupsListEl.appendChild(header);
 
-          // active then saved (drop to bottom)
-          const active = [];
-          const saved = [];
           arr.forEach((ln) => {
             const meta = {
               sportIndex: currentSportIndex,
@@ -1482,11 +1398,7 @@
               category: ln.category || "other",
               book: ln.book || "Consensus",
             };
-            const key = makeSwipeKey(meta);
-            (userItems[key] ? saved : active).push({ ln, meta });
-          });
 
-          [...active, ...saved].forEach(({ ln, meta }) => {
             const key = makeSwipeKey(meta);
             const already = !!userItems[key];
 
@@ -1542,7 +1454,7 @@
         const sport = SPORTS[detailsMeta.sportIndex];
         logoEl.textContent = "📈";
         nameEl.textContent = "Line Details";
-        codeEl.textContent = `${sport.name} • ${sport.matchups[detailsMeta.matchupIndex].name}`;
+        codeEl.textContent = `${sport.name} • ${SPORTS[detailsMeta.sportIndex].matchups[detailsMeta.matchupIndex].name}`;
         indexIndicatorFront.textContent = "";
         indexIndicatorBack.textContent = "";
       }
@@ -1652,11 +1564,8 @@
         }
 
         items.forEach((item) => {
-          const meta = inferMetaFromRow(item);
-          const key = makeSwipeKey(meta);
-
           const card = document.createElement("div");
-          card.className = "matchup-card"; // MyBias stays active (needs swipe to move)
+          card.className = "matchup-card";
 
           const top = document.createElement("div");
           top.className = "matchup-top";
@@ -1672,7 +1581,7 @@
 
           const helper = document.createElement("div");
           helper.className = "matchup-line";
-          helper.textContent = "Swipe → move • Double-click → details • Hold → flip (only this line)";
+          helper.textContent = "Swipe → move to MyLocks/MyArchives • Double-click → details • Hold → flip";
 
           left.appendChild(label);
           left.appendChild(line);
@@ -1686,12 +1595,12 @@
           top.appendChild(right);
 
           card.appendChild(top);
+
+          const meta = inferMetaFromRow(item);
           card.appendChild(buildBiasUI(meta, 55, 45));
 
+          // ✅ In MyBias swiping updates status (lock/archive)
           attachLineInteractions(card, meta, "mybias", 55, 45);
-
-          // If somehow missing key, ensure it exists (but it should)
-          if (!userItems[key]) userItems[key] = item;
 
           matchupsListEl.appendChild(card);
         });
@@ -1744,8 +1653,6 @@
           byBook[book]
             .sort((a,b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
             .forEach((item) => {
-              const meta = inferMetaFromRow(item);
-
               const card = document.createElement("div");
               card.className = "matchup-card";
 
@@ -1777,8 +1684,9 @@
               top.appendChild(right);
 
               card.appendChild(top);
-              card.appendChild(buildBiasUI(meta, 55, 45));
 
+              const meta = inferMetaFromRow(item);
+              card.appendChild(buildBiasUI(meta, 55, 45));
               attachLineInteractions(card, meta, "mylocks", 55, 45);
 
               matchupsListEl.appendChild(card);
@@ -1810,7 +1718,7 @@
 
       function renderArchivesBack() {
         backTitleEl.textContent = "MyArchives";
-        backSubEl.textContent = "Double-click for details. Hold to flip bias (only this line).";
+        backSubEl.textContent = "Double-click for details. Hold to flip bias (does not move status).";
 
         matchupsListEl.innerHTML = "";
 
@@ -1834,10 +1742,8 @@
         items
           .sort((a,b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
           .forEach((item) => {
-            const meta = inferMetaFromRow(item);
-
             const card = document.createElement("div");
-            card.className = "matchup-card is-disabled";
+            card.className = "matchup-card";
 
             const top = document.createElement("div");
             top.className = "matchup-top";
@@ -1867,8 +1773,9 @@
             top.appendChild(right);
 
             card.appendChild(top);
-            card.appendChild(buildBiasUI(meta, 55, 45));
 
+            const meta = inferMetaFromRow(item);
+            card.appendChild(buildBiasUI(meta, 55, 45));
             attachLineInteractions(card, meta, "myarchives", 55, 45);
 
             matchupsListEl.appendChild(card);
@@ -2181,13 +2088,13 @@
             await supabaseClient.auth.signOut();
             authedUser = null;
             showToast("Signed out");
-            authOverlayEl.classList.add("open");
+            openAuthOverlay("Signed out — sign in to swipe");
+            updateUserMenuLabel();
+            buildUserDropdown();
             renderScreen();
           } else {
-            authOverlayEl.classList.add("open");
+            openAuthOverlay("Sign in to continue");
           }
-          updateUserMenuLabel();
-          buildUserDropdown();
         });
         userDropdown.appendChild(authItem);
       }
@@ -2205,22 +2112,9 @@
       });
 
       /************************************************************
-       * AUTH HANDLERS (4 buttons)
+       * AUTH HANDLERS (3 buttons)
        ************************************************************/
-      function ensureClientOrWarn() {
-        if (!supabaseClient) {
-          openModal({
-            title: "Auth not ready",
-            body: "Supabase client didn't initialize. Refresh the page.",
-            actions: [{ label: "OK", onClick: () => {} }],
-          });
-          return false;
-        }
-        return true;
-      }
-
       authSignInBtn.addEventListener("click", async () => {
-        if (!ensureClientOrWarn()) return;
         const email = (authEmailEl.value || "").trim();
         const password = authPasswordEl.value || "";
         if (!email || !password) return showToast("Enter email + password");
@@ -2230,70 +2124,61 @@
           showToast(res.error.message || "Sign in failed");
           return;
         }
+
+        // ✅ Force-close overlay immediately on successful sign-in
+        closeAuthOverlay();
+
+        // Keep state consistent
         await refreshAuth();
         showToast("Signed in");
+        renderScreen();
       });
 
       authSignUpBtn.addEventListener("click", async () => {
-        if (!ensureClientOrWarn()) return;
         const email = (authEmailEl.value || "").trim();
         const password = authPasswordEl.value || "";
         if (!email || !password) return showToast("Enter email + password");
 
         const res = await supabaseClient.auth.signUp({ email, password });
+
         if (res.error) {
           showToast(res.error.message || "Sign up failed");
           return;
         }
 
-        // If confirmation is ON, user may not be authed yet:
-        openModal({
-          title: "Account created",
-          body: "If email confirmation is enabled, confirm your email (or use Magic Link). Then Sign In.",
-          actions: [{ label: "OK", onClick: () => {} }],
-        });
-      });
-
-      authMagicBtn.addEventListener("click", async () => {
-        if (!ensureClientOrWarn()) return;
-        const email = (authEmailEl.value || "").trim();
-        if (!email) return showToast("Enter your email");
-
-        const res = await supabaseClient.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.href },
-        });
-
-        if (res.error) {
-          showToast(res.error.message || "Magic link failed");
+        // If confirmations are ON, Supabase returns no session -> overlay should stay
+        const session = res.data?.session || null;
+        if (!session) {
+          showToast("Account created. Check email to confirm, then sign in.");
+          openAuthOverlay();
           return;
         }
 
-        openModal({
-          title: "Magic Link sent",
-          body: "Check your email and open the link on this device to sign in.",
-          actions: [{ label: "OK", onClick: () => {} }],
-        });
+        // If confirmations are OFF, you get a session -> close overlay
+        closeAuthOverlay();
+        await refreshAuth();
+        showToast("Account created & signed in");
+        renderScreen();
       });
 
       authResetBtn.addEventListener("click", async () => {
-        if (!ensureClientOrWarn()) return;
         const email = (authEmailEl.value || "").trim();
-        if (!email) return showToast("Enter your email");
+        if (!email) return showToast("Enter your email first");
 
-        const res = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.href,
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+          // You can set this to your deployed URL later
+          redirectTo: window.location.href.split("#")[0],
         });
 
-        if (res.error) {
-          showToast(res.error.message || "Reset failed");
+        if (error) {
+          showToast(error.message || "Reset failed");
           return;
         }
 
         openModal({
-          title: "Reset email sent",
-          body: "Check your email to reset your password.",
-          actions: [{ label: "OK", onClick: () => {} }],
+          title: "Password reset sent",
+          body: "Check your email for a reset link. After resetting, come back and sign in.",
+          actions: [{ label: "OK", kind: "primary", onClick: () => {} }],
         });
       });
 
@@ -2301,19 +2186,16 @@
        * INIT
        ************************************************************/
       (async function init() {
-        // Initialize client
         initSupabase();
-
-        // Build menus
         buildSportsMenu();
         buildUserDropdown();
         updateUserMenuLabel();
 
-        // Restore session (this is what makes login “work” on refresh)
         await refreshAuth();
 
-        // If not authed, block swipes but still allow browsing
-        if (!authedUser) authOverlayEl.classList.add("open");
+        // If not authed, keep UI usable but block swipes
+        if (!authedUser) openAuthOverlay(); // show overlay by default when not signed in
+        else closeAuthOverlay();
 
         renderScreen();
       })();
