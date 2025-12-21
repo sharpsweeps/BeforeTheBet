@@ -345,24 +345,28 @@
         position: relative;
 
         /* IMPORTANT for swipe */
-        touch-action: pan-y; /* allow vertical scroll, but we handle horizontal swipe */
+        touch-action: pan-y;
         user-select: none;
+        will-change: transform, opacity;
       }
 
-      /* When already swiped: grey + not swipeable, but still holdable for flip/remove */
       .matchup-card.is-disabled {
-        opacity: 0.42;
+        opacity: 0.38;
+      }
+
+      .matchup-card.dragging {
+        transition: none !important;
       }
 
       .matchup-card.swipe-right {
-        transform: translateX(52px);
+        transform: translateX(70px);
         opacity: 0;
-        transition: transform 0.18s ease, opacity 0.18s ease;
+        transition: transform 0.16s ease, opacity 0.16s ease;
       }
       .matchup-card.swipe-left {
-        transform: translateX(-52px);
+        transform: translateX(-70px);
         opacity: 0;
-        transition: transform 0.18s ease, opacity 0.18s ease;
+        transition: transform 0.16s ease, opacity 0.16s ease;
       }
 
       .matchup-top {
@@ -395,8 +399,8 @@
         font-size: 11px;
         margin-top: 4px;
       }
-      .sentiment-labels span:first-child { color: var(--muted); font-weight: 800; }
-      .sentiment-labels span:last-child { color: var(--muted); font-weight: 800; }
+      .sentiment-labels span:first-child { color: var(--muted); font-weight: 700; }
+      .sentiment-labels span:last-child { color: var(--muted); font-weight: 700; }
 
       .category-header {
         margin: 12px 2px 8px;
@@ -443,7 +447,7 @@
       }
       .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-      /* Auth overlay */
+      /* Auth Overlay */
       #auth-overlay {
         position: fixed;
         inset: 0;
@@ -468,7 +472,7 @@
       .auth-title { font-size: 18px; font-weight: 900; margin-bottom: 6px; }
       .auth-sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.35; }
       .auth-field { margin-bottom: 10px; }
-      .auth-field label { display:block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 800; }
+      .auth-field label { display:block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 700; }
       .auth-field input {
         width: 100%;
         padding: 9px 10px;
@@ -501,8 +505,12 @@
         background: transparent;
         color: var(--text);
       }
+      .auth-primary[disabled], .auth-secondary[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
 
-      /* In-app modal */
+      /* In-app Modal */
       #modal-overlay {
         position: fixed;
         inset: 0;
@@ -730,40 +738,18 @@
       let previousModeBeforeDetails = null;
       let detailsMeta = null;
 
-      // Auth + data
+      // Supabase + auth
       let supabaseClient = null;
       let authedUser = null;
 
-      // Supabase table readiness (graceful fallback)
+      // If Supabase table is missing/misconfigured, we gracefully fall back to localStorage for the current user.
+      // (Across-devices persistence requires Supabase table to exist.)
       let supabaseTableOk = true;
-      let usingLocalFallback = false;
 
-      // Local cache of user items (comes from Supabase after login)
-      // keyed by swipe_key
-      const userItems = {}; // { [key]: { ...row } }
+      // Local cache of user items (from Supabase or fallback)
+      const userItems = {}; // { [swipe_key]: row }
 
-      function userFallbackKey() {
-        const uid = authedUser?.id || "anon";
-        return `btb_swipes_${uid}`;
-      }
-      function loadFallbackFromLocal() {
-        try {
-          const raw = localStorage.getItem(userFallbackKey());
-          if (!raw) return;
-          const parsed = JSON.parse(raw);
-          Object.keys(parsed || {}).forEach((k) => userItems[k] = parsed[k]);
-        } catch (_) {}
-      }
-      function saveFallbackToLocal() {
-        try {
-          localStorage.setItem(userFallbackKey(), JSON.stringify(userItems));
-        } catch (_) {}
-      }
-
-      // Count swipes by this user (for "show community after 5 swipes")
-      function getUserSwipeCount() {
-        return Object.values(userItems).length;
-      }
+      function isAuthed() { return !!authedUser; }
 
       /************************************************************
        * DOM
@@ -818,7 +804,7 @@
         toastEl.textContent = msg;
         toastEl.classList.add("show");
         clearTimeout(showToast._t);
-        showToast._t = setTimeout(() => toastEl.classList.remove("show"), 1400);
+        showToast._t = setTimeout(() => toastEl.classList.remove("show"), 1200);
       }
 
       function openModal({ title, body, actions }) {
@@ -856,19 +842,27 @@
         return `${sport}||${matchup}||${meta.label}||${book}`;
       }
 
-      function isAuthed() { return !!authedUser; }
+      function getUserSwipeCount() {
+        return Object.values(userItems).length;
+      }
 
-      function requireAuthOrOpen() {
+      function requireAuthOrPrompt() {
         if (!isAuthed()) {
-          authOverlayEl.classList.add("open");
-          showToast("Sign in required to swipe");
+          openModal({
+            title: "Sign in required",
+            body: "You must sign in before you can swipe lines.",
+            actions: [
+              { label: "Cancel", onClick: () => {} },
+              { label: "Sign in", kind: "primary", onClick: () => authOverlayEl.classList.add("open") },
+            ],
+          });
           return false;
         }
         return true;
       }
 
       /************************************************************
-       * THEME (Light default)
+       * THEME
        ************************************************************/
       function setTheme(theme) {
         if (theme === "dark") {
@@ -891,25 +885,39 @@
       });
 
       /************************************************************
-       * SUPABASE (robust init + auth sync)
+       * SUPABASE (auth reliability fixed)
        ************************************************************/
-      async function waitForSupabaseGlobal() {
-        const start = Date.now();
-        while (!window.supabase || !window.supabase.createClient) {
-          if (Date.now() - start > 6000) break;
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        return !!(window.supabase && window.supabase.createClient);
-      }
-
       function initSupabase() {
+        if (!window.supabase || !window.supabase.createClient) {
+          // This should never happen if CDN loads, but fail gracefully.
+          supabaseClient = null;
+          supabaseTableOk = false;
+          console.warn("Supabase library not loaded.");
+          return;
+        }
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: { persistSession: true, autoRefreshToken: true },
         });
       }
 
-      function clearUserCache() {
-        Object.keys(userItems).forEach((k) => delete userItems[k]);
+      function fallbackKeyForUser(userId) {
+        return `btb_items_${userId}`;
+      }
+      function loadFallbackItems(userId) {
+        try {
+          const raw = localStorage.getItem(fallbackKeyForUser(userId));
+          const parsed = raw ? JSON.parse(raw) : {};
+          for (const k of Object.keys(parsed || {})) userItems[k] = parsed[k];
+        } catch (e) {
+          console.warn("Fallback load failed", e);
+        }
+      }
+      function saveFallbackItems(userId) {
+        try {
+          localStorage.setItem(fallbackKeyForUser(userId), JSON.stringify(userItems));
+        } catch (e) {
+          console.warn("Fallback save failed", e);
+        }
       }
 
       async function refreshAuth() {
@@ -921,23 +929,26 @@
         }
         authedUser = data?.session?.user || null;
 
-        clearUserCache();
-        supabaseTableOk = true;
-        usingLocalFallback = false;
-
         if (authedUser) {
           authOverlayEl.classList.remove("open");
-          await loadUserSwipes();     // supabase or fallback
-          updateUserMenuLabel();
-          buildUserDropdown();
-        } else {
-          updateUserMenuLabel();
-          buildUserDropdown();
+          await loadUserSwipes();
         }
+
+        updateUserMenuLabel();
+        buildUserDropdown();
       }
 
       async function loadUserSwipes() {
-        if (!authedUser || !supabaseClient) return;
+        if (!authedUser) return;
+
+        // clear current cache
+        for (const k of Object.keys(userItems)) delete userItems[k];
+
+        if (!supabaseClient) {
+          supabaseTableOk = false;
+          loadFallbackItems(authedUser.id);
+          return;
+        }
 
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
@@ -945,32 +956,28 @@
           .eq("user_id", authedUser.id);
 
         if (error) {
-          // Graceful fallback
-          console.warn("loadUserSwipes error:", error);
+          // graceful fallback (local only)
           supabaseTableOk = false;
-          usingLocalFallback = true;
-          loadFallbackFromLocal();
-          showToast("Supabase swipes table not ready — using local demo storage");
+          console.warn("loadUserSwipes error:", error);
+          showToast("Supabase table not ready (using local fallback).");
+          loadFallbackItems(authedUser.id);
           return;
         }
 
+        supabaseTableOk = true;
         for (const row of data || []) {
           userItems[row.swipe_key] = row;
         }
       }
 
       async function saveSwipeRow(row) {
-        if (!authedUser) return { data: null, error: { message: "Not authed" } };
-
-        // Fallback mode
+        // If table not ok, local fallback
         if (!supabaseClient || !supabaseTableOk) {
-          usingLocalFallback = true;
           userItems[row.swipe_key] = row;
-          saveFallbackToLocal();
+          if (authedUser) saveFallbackItems(authedUser.id);
           return { data: row, error: null };
         }
 
-        // Upsert on (user_id, swipe_key)
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
           .upsert(row, { onConflict: "user_id,swipe_key" })
@@ -979,12 +986,10 @@
 
         if (error) {
           console.warn("saveSwipeRow error:", error);
-          // graceful fallback
           supabaseTableOk = false;
-          usingLocalFallback = true;
+          // fallback write so UI still works
           userItems[row.swipe_key] = row;
-          saveFallbackToLocal();
-          showToast("Supabase issue — saving locally for now");
+          if (authedUser) saveFallbackItems(authedUser.id);
           return { data: row, error: null };
         }
 
@@ -992,64 +997,32 @@
         return { data, error: null };
       }
 
-      async function updateStatus(key, status) {
+      async function updateRowFields(key, fields) {
         const existing = userItems[key];
         if (!existing) return;
 
-        // Fallback mode
+        const updated = { ...existing, ...fields, updated_at: new Date().toISOString() };
+
         if (!supabaseClient || !supabaseTableOk) {
-          userItems[key] = { ...existing, status, updated_at: new Date().toISOString() };
-          saveFallbackToLocal();
+          userItems[key] = updated;
+          if (authedUser) saveFallbackItems(authedUser.id);
           return;
         }
 
         const { data, error } = await supabaseClient
           .from(SWIPES_TABLE)
-          .update({ status, updated_at: new Date().toISOString() })
+          .update(updated)
           .eq("user_id", authedUser.id)
           .eq("swipe_key", key)
           .select()
           .single();
 
         if (error) {
-          console.warn("updateStatus error:", error);
+          console.warn("updateRowFields error:", error);
           supabaseTableOk = false;
-          usingLocalFallback = true;
-          userItems[key] = { ...existing, status, updated_at: new Date().toISOString() };
-          saveFallbackToLocal();
-          showToast("Supabase issue — updating locally for now");
-          return;
-        }
-
-        userItems[key] = data;
-      }
-
-      async function updateVote(key, newVote) {
-        const existing = userItems[key];
-        if (!existing) return;
-
-        // Fallback mode
-        if (!supabaseClient || !supabaseTableOk) {
-          userItems[key] = { ...existing, vote: newVote, updated_at: new Date().toISOString() };
-          saveFallbackToLocal();
-          return;
-        }
-
-        const { data, error } = await supabaseClient
-          .from(SWIPES_TABLE)
-          .update({ vote: newVote, updated_at: new Date().toISOString() })
-          .eq("user_id", authedUser.id)
-          .eq("swipe_key", key)
-          .select()
-          .single();
-
-        if (error) {
-          console.warn("updateVote error:", error);
-          supabaseTableOk = false;
-          usingLocalFallback = true;
-          userItems[key] = { ...existing, vote: newVote, updated_at: new Date().toISOString() };
-          saveFallbackToLocal();
-          showToast("Supabase issue — updating locally for now");
+          // fallback
+          userItems[key] = updated;
+          if (authedUser) saveFallbackItems(authedUser.id);
           return;
         }
 
@@ -1057,13 +1030,9 @@
       }
 
       async function deleteLock(key) {
-        const existing = userItems[key];
-        if (!existing) return;
-
-        // Fallback mode
         if (!supabaseClient || !supabaseTableOk) {
           delete userItems[key];
-          saveFallbackToLocal();
+          if (authedUser) saveFallbackItems(authedUser.id);
           return;
         }
 
@@ -1076,23 +1045,19 @@
         if (error) {
           console.warn("deleteLock error:", error);
           supabaseTableOk = false;
-          usingLocalFallback = true;
+          // fallback
           delete userItems[key];
-          saveFallbackToLocal();
-          showToast("Supabase issue — removing locally for now");
+          if (authedUser) saveFallbackItems(authedUser.id);
           return;
         }
-
         delete userItems[key];
       }
 
       /************************************************************
-       * BIAS DISPLAY LOGIC
-       * - First 5 user swipes: show blue 50/50 for all lines
-       * - After 5: show community bias green using line sharp/sweep
+       * BIAS DISPLAY
        ************************************************************/
       function getDisplayBias(meta, fallbackSharp, fallbackSweep) {
-        const count = getUserSwipeCount();
+        const count = isAuthed() ? getUserSwipeCount() : 0;
         if (count < 5) {
           return { confident: 50, doubt: 50, color: "blue" };
         }
@@ -1139,175 +1104,164 @@
       }
 
       /************************************************************
-       * SWIPE + LONG PRESS (single unified implementation)
-       * Fixes:
-       * - Swipes always register (preventDefault + pointer capture)
-       * - MyBias swipes do NOT "already saved" — they UPDATE status
-       * - Swiped lines become disabled + render sorts them to bottom
+       * SWIPE ENGINE (THIS IS THE FIX)
+       * - Real drag with pointer capture + transform on move
+       * - Swipe triggers reliably across devices
+       * - MyBias swipes UPDATE status (no "already saved" block)
        ************************************************************/
-      function attachLineInteractions(card, meta, context, fallbackSharp, fallbackSweep) {
-        const key = makeSwipeKey(meta);
-
-        // Always allow dblclick to open details
-        card.addEventListener("dblclick", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          openLineDetails(meta, fallbackSharp, fallbackSweep);
-        });
-
-        // Long press: flip ONLY this line’s bias, OR remove from locks
-        let pressTimer = null;
-        let startX = 0, startY = 0;
-        let pointerDown = false;
+      function attachSwipeAndHold(card, {
+        key,
+        context,                 // "matchupsTop" | "allLines" | "mybias" | "mylocks" | "myarchives"
+        onDoubleClick,           // fn
+        onSwipeRight,            // fn
+        onSwipeLeft,             // fn
+        onHold,                  // fn (long press)
+        swipeEnabled,            // bool
+        holdEnabled,             // bool
+        disableSwipeIfSaved      // bool
+      }) {
         let pointerId = null;
+        let startX = 0, startY = 0;
+        let currentX = 0;
+        let dragging = false;
+        let moved = false;
+        let holdTimer = null;
 
-        function clearPress() {
-          if (pressTimer) clearTimeout(pressTimer);
-          pressTimer = null;
+        const SWIPE_THRESHOLD = 45;
+        const MOVE_CANCEL_HOLD = 10;
+        const HOLD_MS = 650;
+
+        function clearHold() {
+          if (holdTimer) clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+
+        function resetTransform() {
+          card.classList.remove("dragging");
+          card.style.transform = "";
+        }
+
+        // dblclick -> details
+        if (typeof onDoubleClick === "function") {
+          card.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDoubleClick();
+          });
         }
 
         card.addEventListener("pointerdown", (e) => {
-          e.preventDefault();
           e.stopPropagation();
 
-          pointerDown = true;
           pointerId = e.pointerId;
           startX = e.clientX;
           startY = e.clientY;
+          currentX = 0;
+          dragging = true;
+          moved = false;
 
           try { card.setPointerCapture(pointerId); } catch (_) {}
 
-          clearPress();
-          pressTimer = setTimeout(() => {
-            clearPress();
-            pointerDown = false;
-
-            if (!requireAuthOrOpen()) return;
-
-            // locks: long press removes
-            if (context === "mylocks") {
-              openModal({
-                title: "Remove from MyLocks?",
-                body: "This will remove the line from MyLocks (and it will disappear on all devices if Supabase is working).",
-                actions: [
-                  { label: "Cancel", onClick: () => {} },
-                  { label: "Remove", kind: "danger", onClick: async () => {
-                      await deleteLock(key);
-                      showToast("Removed from MyLocks");
-                      renderScreen();
-                    }
-                  },
-                ],
-              });
-              return;
-            }
-
-            const item = userItems[key];
-            if (!item) {
-              showToast("Swipe it once first");
-              return;
-            }
-
-            openModal({
-              title: "Change your bias?",
-              body: "Flip your saved bias for this line (only this line).",
-              actions: [
-                { label: "Cancel", onClick: () => {} },
-                { label: "Flip", kind: "primary", onClick: async () => {
-                    const newVote = item.vote === "confident" ? "doubt" : "confident";
-                    await updateVote(key, newVote);
-                    showToast("Bias flipped");
-                    renderScreen();
-                  }
-                },
-              ],
-            });
-          }, 650);
+          clearHold();
+          if (holdEnabled) {
+            holdTimer = setTimeout(() => {
+              clearHold();
+              dragging = false;
+              resetTransform();
+              if (typeof onHold === "function") onHold();
+            }, HOLD_MS);
+          }
         });
 
         card.addEventListener("pointermove", (e) => {
-          if (!pointerDown) return;
-          const dx = Math.abs(e.clientX - startX);
-          const dy = Math.abs(e.clientY - startY);
-          if (dx > 10 || dy > 10) clearPress();
+          if (!dragging) return;
+
+          const dx = e.clientX - startX;
+          const dy = e.clientY - startY;
+
+          if (Math.abs(dx) > MOVE_CANCEL_HOLD || Math.abs(dy) > MOVE_CANCEL_HOLD) {
+            moved = true;
+            clearHold();
+          }
+
+          // If swipe is disabled, we still allow hold, but no drag animation
+          if (!swipeEnabled) return;
+
+          // If disableSwipeIfSaved: card has is-disabled class, don’t drag
+          if (disableSwipeIfSaved && card.classList.contains("is-disabled")) return;
+
+          // horizontal drag only
+          card.classList.add("dragging");
+          currentX = dx;
+          card.style.transform = `translateX(${dx}px)`;
         });
 
         card.addEventListener("pointerup", async (e) => {
-          e.preventDefault();
           e.stopPropagation();
-          clearPress();
-          if (!pointerDown) return;
-          pointerDown = false;
-
-          if (!requireAuthOrOpen()) return;
+          clearHold();
 
           const dx = e.clientX - startX;
-          const threshold = 42;
-          if (Math.abs(dx) < threshold) return;
+          const absDx = Math.abs(dx);
 
-          const vote = dx > 0 ? "confident" : "doubt"; // RIGHT = confident, LEFT = doubt
+          dragging = false;
 
-          // MyLocks/MyArchives screens are not swipe destinations
-          if (context === "mylocks" || context === "myarchives" || context === "lineDetails") return;
-
-          const exists = !!userItems[key];
-
-          // If swiping on MyBias: UPDATE status (never blocked by "already saved")
-          if (context === "mybias") {
-            if (!exists) {
-              showToast("Missing item (reload)");
-              return;
-            }
-            const newStatus = vote === "confident" ? "lock" : "archived";
-            card.classList.add(vote === "confident" ? "swipe-right" : "swipe-left");
-            setTimeout(async () => {
-              await updateStatus(key, newStatus);
-              showToast(newStatus === "lock" ? "Moved to MyLocks" : "Moved to MyArchives");
-              renderScreen();
-            }, 190);
+          // if swipe disabled or card saved (and disabling is on) -> do nothing
+          if (!swipeEnabled || (disableSwipeIfSaved && card.classList.contains("is-disabled"))) {
+            resetTransform();
             return;
           }
 
-          // Other contexts (matchupsTop / allLines): only allow first swipe; then disabled
-          if (exists) {
-            showToast("Already saved (hold to flip bias)");
+          // must have moved enough
+          if (absDx < SWIPE_THRESHOLD) {
+            resetTransform();
             return;
           }
 
-          // Save to profile BEFORE UI moves
-          const sport = SPORTS[meta.sportIndex];
-          const matchup = sport.matchups[meta.matchupIndex];
-          const book = meta.book || "Best Available";
-
-          const row = {
-            user_id: authedUser.id,
-            swipe_key: key,
-            sport_id: sport.id,
-            matchup_name: matchup.name,
-            label: meta.label,
-            category: meta.category || "other",
-            book,
-            vote,
-            status: "inbox", // initial bucket is MyBias
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-
-          card.classList.add(vote === "confident" ? "swipe-right" : "swipe-left");
-          setTimeout(async () => {
-            await saveSwipeRow(row);
-            showToast(vote === "confident" ? "✅ Confident" : "❌ Doubt it");
-            renderScreen();
-          }, 190);
+          // trigger swipe
+          if (dx > 0) {
+            card.classList.add("swipe-right");
+            setTimeout(() => resetTransform(), 180);
+            if (typeof onSwipeRight === "function") await onSwipeRight();
+          } else {
+            card.classList.add("swipe-left");
+            setTimeout(() => resetTransform(), 180);
+            if (typeof onSwipeLeft === "function") await onSwipeLeft();
+          }
         });
 
         card.addEventListener("pointercancel", () => {
-          clearPress();
-          pointerDown = false;
+          clearHold();
+          dragging = false;
+          resetTransform();
         });
 
-        // Prevent main card flip from stealing interactions
+        // stop click bubbling to main card area
         card.addEventListener("click", (e) => e.stopPropagation());
+      }
+
+      /************************************************************
+       * DATA HELPERS
+       ************************************************************/
+      function inferMetaFromRow(row) {
+        const sIndex = SPORTS.findIndex((s) => s.id === row.sport_id);
+        const mIndex = sIndex >= 0 ? SPORTS[sIndex].matchups.findIndex((m) => m.name === row.matchup_name) : 0;
+        return {
+          sportIndex: Math.max(0, sIndex),
+          matchupIndex: Math.max(0, mIndex),
+          label: row.label,
+          category: row.category || "other",
+          book: row.book || "Best Available",
+        };
+      }
+
+      function getMyBiasItems() {
+        return Object.values(userItems).filter((x) => x.status === "inbox");
+      }
+      function getLocks() {
+        return Object.values(userItems).filter((x) => x.status === "lock");
+      }
+      function getArchives() {
+        return Object.values(userItems).filter((x) => x.status === "archived");
       }
 
       /************************************************************
@@ -1365,6 +1319,7 @@
           top.appendChild(right);
 
           card.appendChild(top);
+
           card.appendChild(buildBiasUI(
             { sportIndex: currentSportIndex, matchupIndex: mIndex, label: topLine.label, category: topLine.category || "other", book: topLine.book },
             topLine.sharp, topLine.sweep
@@ -1397,16 +1352,12 @@
         indexIndicatorBack.textContent = idx;
       }
 
-      function sortDisabledBottom(arr) {
-        // stable-ish: active first; saved/disabled last
-        return arr.slice().sort((a, b) => {
-          const aKey = a.__savedKey || "";
-          const bKey = b.__savedKey || "";
-          const aSaved = !!userItems[aKey];
-          const bSaved = !!userItems[bKey];
-          if (aSaved !== bSaved) return aSaved ? 1 : -1;
-          return 0;
-        });
+      function openLineDetails(meta, fallbackSharp, fallbackSweep) {
+        previousModeBeforeDetails = mode;
+        detailsMeta = { ...meta, fallbackSharp, fallbackSweep };
+        mode = "lineDetails";
+        flipped = true;
+        renderScreen();
       }
 
       function renderMatchupsBack() {
@@ -1418,7 +1369,13 @@
 
         matchupsListEl.innerHTML = "";
 
-        const lines = (matchup.lines || []).slice(0, 6).map((ln) => {
+        const lines = (matchup.lines || []).slice(0, 6);
+
+        // ✅ Swiped lines drop to bottom + grey out (for this list view)
+        const unswiped = [];
+        const swiped = [];
+
+        lines.forEach((ln) => {
           const meta = {
             sportIndex: currentSportIndex,
             matchupIndex: currentMatchupIndex,
@@ -1426,22 +1383,14 @@
             category: ln.category || "other",
             book: ln.book || "Consensus",
           };
-          ln.__savedKey = makeSwipeKey(meta);
-          return ln;
-        });
-
-        sortDisabledBottom(lines).forEach((ln) => {
-          const meta = {
-            sportIndex: currentSportIndex,
-            matchupIndex: currentMatchupIndex,
-            label: ln.label,
-            category: ln.category || "other",
-            book: ln.book || "Consensus",
-          };
-
           const key = makeSwipeKey(meta);
           const already = !!userItems[key];
+          (already ? swiped : unswiped).push({ ln, meta, key, already });
+        });
 
+        const ordered = unswiped.concat(swiped);
+
+        ordered.forEach(({ ln, meta, key, already }) => {
           const card = document.createElement("div");
           card.className = "matchup-card" + (already ? " is-disabled" : "");
 
@@ -1475,7 +1424,85 @@
           card.appendChild(top);
           card.appendChild(buildBiasUI(meta, ln.sharp, ln.sweep));
 
-          attachLineInteractions(card, meta, "matchupsTop", ln.sharp, ln.sweep);
+          // ✅ Real swipe + save
+          attachSwipeAndHold(card, {
+            key,
+            context: "matchupsTop",
+            swipeEnabled: true,
+            holdEnabled: true,
+            disableSwipeIfSaved: true,
+            onDoubleClick: () => openLineDetails(meta, ln.sharp, ln.sweep),
+            onHold: async () => {
+              if (!requireAuthOrPrompt()) return;
+              const existing = userItems[key];
+              if (!existing) {
+                showToast("Swipe it once first");
+                return;
+              }
+              openModal({
+                title: "Change your bias?",
+                body: "Flip your saved bias for this line (only this line).",
+                actions: [
+                  { label: "Cancel", onClick: () => {} },
+                  { label: "Flip", kind: "primary", onClick: async () => {
+                      const newVote = existing.vote === "confident" ? "doubt" : "confident";
+                      await updateRowFields(key, { vote: newVote });
+                      showToast("Bias flipped");
+                      renderScreen();
+                    }
+                  },
+                ],
+              });
+            },
+            onSwipeRight: async () => {
+              if (!requireAuthOrPrompt()) return;
+              if (userItems[key]) { showToast("Already saved (hold to flip)"); renderScreen(); return; }
+
+              const sportObj = SPORTS[meta.sportIndex];
+              const matchupObj = sportObj.matchups[meta.matchupIndex];
+              const row = {
+                user_id: authedUser.id,
+                swipe_key: key,
+                sport_id: sportObj.id,
+                matchup_name: matchupObj.name,
+                label: meta.label,
+                category: meta.category || "other",
+                book: meta.book || "Best Available",
+                vote: "confident",
+                status: "inbox",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+
+              await saveSwipeRow(row);
+              showToast("✅ Confident");
+              renderScreen();
+            },
+            onSwipeLeft: async () => {
+              if (!requireAuthOrPrompt()) return;
+              if (userItems[key]) { showToast("Already saved (hold to flip)"); renderScreen(); return; }
+
+              const sportObj = SPORTS[meta.sportIndex];
+              const matchupObj = sportObj.matchups[meta.matchupIndex];
+              const row = {
+                user_id: authedUser.id,
+                swipe_key: key,
+                sport_id: sportObj.id,
+                matchup_name: matchupObj.name,
+                label: meta.label,
+                category: meta.category || "other",
+                book: meta.book || "Best Available",
+                vote: "doubt",
+                status: "inbox",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+
+              await saveSwipeRow(row);
+              showToast("❌ Doubt it");
+              renderScreen();
+            },
+          });
 
           matchupsListEl.appendChild(card);
         });
@@ -1493,14 +1520,13 @@
         const base = matchup.lines || [];
         let extended = base.slice();
 
-        // Demo: add some alternates
+        // Demo: add alternates
         let altCounter = 1;
         while (extended.length < 14 && base.length) {
           const t = base[(extended.length - base.length) % base.length];
           extended.push({ ...t, category: "alt", label: `${t.label} (Alt ${altCounter++})` });
         }
 
-        // Group by category, but within each category: active first then saved/disabled
         const grouped = {};
         extended.forEach((ln) => {
           const cat = ln.category || "other";
@@ -1512,8 +1538,11 @@
           const arr = grouped[cat];
           if (!arr || !arr.length) return;
 
-          // annotate keys for sorting
-          const annotated = arr.map((ln) => {
+          // ✅ Within each category, drop saved items to the bottom
+          const unswiped = [];
+          const swiped = [];
+
+          arr.forEach((ln) => {
             const meta = {
               sportIndex: currentSportIndex,
               matchupIndex: currentMatchupIndex,
@@ -1521,8 +1550,9 @@
               category: ln.category || "other",
               book: ln.book || "Consensus",
             };
-            ln.__savedKey = makeSwipeKey(meta);
-            return ln;
+            const key = makeSwipeKey(meta);
+            const already = !!userItems[key];
+            (already ? swiped : unswiped).push({ ln, meta, key, already });
           });
 
           const header = document.createElement("div");
@@ -1530,18 +1560,7 @@
           header.textContent = CATEGORY_LABELS[cat] || "Other";
           matchupsListEl.appendChild(header);
 
-          sortDisabledBottom(annotated).forEach((ln) => {
-            const meta = {
-              sportIndex: currentSportIndex,
-              matchupIndex: currentMatchupIndex,
-              label: ln.label,
-              category: ln.category || "other",
-              book: ln.book || "Consensus",
-            };
-
-            const key = makeSwipeKey(meta);
-            const already = !!userItems[key];
-
+          unswiped.concat(swiped).forEach(({ ln, meta, key, already }) => {
             const card = document.createElement("div");
             card.className = "matchup-card" + (already ? " is-disabled" : "");
 
@@ -1575,19 +1594,86 @@
             card.appendChild(top);
             card.appendChild(buildBiasUI(meta, ln.sharp, ln.sweep));
 
-            attachLineInteractions(card, meta, "allLines", ln.sharp, ln.sweep);
+            attachSwipeAndHold(card, {
+              key,
+              context: "allLines",
+              swipeEnabled: true,
+              holdEnabled: true,
+              disableSwipeIfSaved: true,
+              onDoubleClick: () => openLineDetails(meta, ln.sharp, ln.sweep),
+              onHold: async () => {
+                if (!requireAuthOrPrompt()) return;
+                const existing = userItems[key];
+                if (!existing) { showToast("Swipe it once first"); return; }
+
+                openModal({
+                  title: "Change your bias?",
+                  body: "Flip your saved bias for this line (only this line).",
+                  actions: [
+                    { label: "Cancel", onClick: () => {} },
+                    { label: "Flip", kind: "primary", onClick: async () => {
+                        const newVote = existing.vote === "confident" ? "doubt" : "confident";
+                        await updateRowFields(key, { vote: newVote });
+                        showToast("Bias flipped");
+                        renderScreen();
+                      }
+                    },
+                  ],
+                });
+              },
+              onSwipeRight: async () => {
+                if (!requireAuthOrPrompt()) return;
+                if (userItems[key]) { showToast("Already saved (hold to flip)"); renderScreen(); return; }
+
+                const sportObj = SPORTS[meta.sportIndex];
+                const matchupObj = sportObj.matchups[meta.matchupIndex];
+                const row = {
+                  user_id: authedUser.id,
+                  swipe_key: key,
+                  sport_id: sportObj.id,
+                  matchup_name: matchupObj.name,
+                  label: meta.label,
+                  category: meta.category || "other",
+                  book: meta.book || "Best Available",
+                  vote: "confident",
+                  status: "inbox",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                };
+
+                await saveSwipeRow(row);
+                showToast("✅ Confident");
+                renderScreen();
+              },
+              onSwipeLeft: async () => {
+                if (!requireAuthOrPrompt()) return;
+                if (userItems[key]) { showToast("Already saved (hold to flip)"); renderScreen(); return; }
+
+                const sportObj = SPORTS[meta.sportIndex];
+                const matchupObj = sportObj.matchups[meta.matchupIndex];
+                const row = {
+                  user_id: authedUser.id,
+                  swipe_key: key,
+                  sport_id: sportObj.id,
+                  matchup_name: matchupObj.name,
+                  label: meta.label,
+                  category: meta.category || "other",
+                  book: meta.book || "Best Available",
+                  vote: "doubt",
+                  status: "inbox",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                };
+
+                await saveSwipeRow(row);
+                showToast("❌ Doubt it");
+                renderScreen();
+              },
+            });
 
             matchupsListEl.appendChild(card);
           });
         });
-      }
-
-      function openLineDetails(meta, fallbackSharp, fallbackSweep) {
-        previousModeBeforeDetails = mode;
-        detailsMeta = { ...meta, fallbackSharp, fallbackSweep };
-        mode = "lineDetails";
-        flipped = true;
-        renderScreen();
       }
 
       function renderLineDetailsFront() {
@@ -1656,28 +1742,12 @@
         matchupsListEl.appendChild(card);
       }
 
-      function getMyBiasItems() { return Object.values(userItems).filter((x) => x.status === "inbox"); }
-      function getLocks() { return Object.values(userItems).filter((x) => x.status === "lock"); }
-      function getArchives() { return Object.values(userItems).filter((x) => x.status === "archived"); }
-
       function renderMyBiasFront() {
         logoEl.textContent = "🧠";
         nameEl.textContent = "MyBias";
         codeEl.textContent = authedUser ? "Your saved swipes" : "Sign in required";
         indexIndicatorFront.textContent = "";
         indexIndicatorBack.textContent = "";
-      }
-
-      function inferMetaFromRow(row) {
-        const sIndex = SPORTS.findIndex((s) => s.id === row.sport_id);
-        const mIndex = sIndex >= 0 ? SPORTS[sIndex].matchups.findIndex((m) => m.name === row.matchup_name) : 0;
-        return {
-          sportIndex: Math.max(0, sIndex),
-          matchupIndex: Math.max(0, mIndex),
-          label: row.label,
-          category: row.category || "other",
-          book: row.book || "Best Available",
-        };
       }
 
       function renderMyBiasBack() {
@@ -1694,19 +1764,19 @@
           return;
         }
 
-        const items = getMyBiasItems()
-          .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
-
+        const items = getMyBiasItems().sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
         if (!items.length) {
           const c = document.createElement("div");
           c.className = "matchup-card";
-          c.innerHTML = `<div class="matchup-label">No items in MyBias</div><div class="matchup-line">Swipe lines in All Lines, then manage them here.</div>`;
+          c.innerHTML = `<div class="matchup-label">No items in MyBias</div><div class="matchup-line">Swipe lines in matchups/all lines, then manage them here.</div>`;
           matchupsListEl.appendChild(c);
           return;
         }
 
         items.forEach((item) => {
           const meta = inferMetaFromRow(item);
+          const key = item.swipe_key;
+
           const card = document.createElement("div");
           card.className = "matchup-card";
 
@@ -1738,10 +1808,47 @@
           top.appendChild(right);
 
           card.appendChild(top);
-          // gating applies here too (blue 50/50 until user has 5 swipes)
+
+          // Bias UI gating (blue until user has 5 swipes)
           card.appendChild(buildBiasUI(meta, 55, 45));
 
-          attachLineInteractions(card, meta, "mybias", 55, 45);
+          // ✅ MyBias swipes UPDATE status (no “already saved” blocking)
+          attachSwipeAndHold(card, {
+            key,
+            context: "mybias",
+            swipeEnabled: true,
+            holdEnabled: true,
+            disableSwipeIfSaved: false, // IMPORTANT: MyBias items are saved; still swipable to move
+            onDoubleClick: () => openLineDetails(meta, 55, 45),
+            onHold: async () => {
+              openModal({
+                title: "Change your bias?",
+                body: "Flip your saved bias for this line (only this line).",
+                actions: [
+                  { label: "Cancel", onClick: () => {} },
+                  { label: "Flip", kind: "primary", onClick: async () => {
+                      const existing = userItems[key];
+                      const newVote = existing.vote === "confident" ? "doubt" : "confident";
+                      await updateRowFields(key, { vote: newVote });
+                      showToast("Bias flipped");
+                      renderScreen();
+                    }
+                  },
+                ],
+              });
+            },
+            onSwipeRight: async () => {
+              await updateRowFields(key, { status: "lock" });
+              showToast("Moved to MyLocks");
+              renderScreen();
+            },
+            onSwipeLeft: async () => {
+              await updateRowFields(key, { status: "archived" });
+              showToast("Moved to MyArchives");
+              renderScreen();
+            },
+          });
+
           matchupsListEl.appendChild(card);
         });
       }
@@ -1795,6 +1902,7 @@
             .sort((a,b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
             .forEach((item) => {
               const meta = inferMetaFromRow(item);
+              const key = item.swipe_key;
 
               const card = document.createElement("div");
               card.className = "matchup-card";
@@ -1829,7 +1937,30 @@
               card.appendChild(top);
               card.appendChild(buildBiasUI(meta, 55, 45));
 
-              attachLineInteractions(card, meta, "mylocks", 55, 45);
+              // Hold-to-remove; double click details; no swipe here
+              attachSwipeAndHold(card, {
+                key,
+                context: "mylocks",
+                swipeEnabled: false,
+                holdEnabled: true,
+                disableSwipeIfSaved: false,
+                onDoubleClick: () => openLineDetails(meta, 55, 45),
+                onHold: async () => {
+                  openModal({
+                    title: "Remove from MyLocks?",
+                    body: "This removes the line from MyLocks (and it disappears on all devices if Supabase table is set up).",
+                    actions: [
+                      { label: "Cancel", onClick: () => {} },
+                      { label: "Remove", kind: "danger", onClick: async () => {
+                          await deleteLock(key);
+                          showToast("Removed from MyLocks");
+                          renderScreen();
+                        }
+                      },
+                    ],
+                  });
+                },
+              });
 
               matchupsListEl.appendChild(card);
             });
@@ -1860,7 +1991,7 @@
 
       function renderArchivesBack() {
         backTitleEl.textContent = "MyArchives";
-        backSubEl.textContent = "Double-click for details. Hold to flip bias (does not move status).";
+        backSubEl.textContent = "Double-click for details. Hold to flip bias (only this line).";
 
         matchupsListEl.innerHTML = "";
 
@@ -1885,6 +2016,7 @@
           .sort((a,b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
           .forEach((item) => {
             const meta = inferMetaFromRow(item);
+            const key = item.swipe_key;
 
             const card = document.createElement("div");
             card.className = "matchup-card";
@@ -1919,7 +2051,31 @@
             card.appendChild(top);
             card.appendChild(buildBiasUI(meta, 55, 45));
 
-            attachLineInteractions(card, meta, "myarchives", 55, 45);
+            attachSwipeAndHold(card, {
+              key,
+              context: "myarchives",
+              swipeEnabled: false,
+              holdEnabled: true,
+              disableSwipeIfSaved: false,
+              onDoubleClick: () => openLineDetails(meta, 55, 45),
+              onHold: async () => {
+                openModal({
+                  title: "Change your bias?",
+                  body: "Flip your saved bias for this line (only this line).",
+                  actions: [
+                    { label: "Cancel", onClick: () => {} },
+                    { label: "Flip", kind: "primary", onClick: async () => {
+                        const existing = userItems[key];
+                        const newVote = existing.vote === "confident" ? "doubt" : "confident";
+                        await updateRowFields(key, { vote: newVote });
+                        showToast("Bias flipped");
+                        renderScreen();
+                      }
+                    },
+                  ],
+                });
+              },
+            });
 
             matchupsListEl.appendChild(card);
           });
@@ -1983,8 +2139,7 @@
         if (mode === "mylocks") {
           titleEl.textContent = "MyLocks";
           subtitleEl.textContent = "Grouped by sportsbook";
-          directionsEl.innerHTML =
-            'Hold a lock to remove it. Place Bet buttons show a demo pop-up.';
+          directionsEl.innerHTML = 'Hold a lock to remove it. Place Bet buttons show a demo pop-up.';
           renderLocksFront();
           renderLocksBack();
           flipped = true;
@@ -1993,15 +2148,13 @@
         if (mode === "myarchives") {
           titleEl.textContent = "MyArchives";
           subtitleEl.textContent = "Archived lines";
-          directionsEl.innerHTML =
-            'Double-click a line for details. Hold to flip your bias (only that line).';
+          directionsEl.innerHTML = 'Double-click a line for details. Hold to flip your bias (only that line).';
           renderArchivesFront();
           renderArchivesBack();
           flipped = true;
         }
 
         renderCardFlipState();
-        updateUserMenuLabel();
       }
 
       function handleGlobalBack() {
@@ -2048,10 +2201,8 @@
         const x = e.clientX - rect.left;
         const zone = x / rect.width;
 
-        // Hub pages don't use edge navigation
         if (mode === "mybias" || mode === "mylocks" || mode === "myarchives" || mode === "lineDetails") return;
 
-        // Edge nav
         if (zone < 0.2) {
           if (mode === "sports") {
             currentSportIndex = getPrevIndex(SPORTS.length, currentSportIndex);
@@ -2080,7 +2231,6 @@
           }
         }
 
-        // Center single click: flip ONLY in sports/matchups
         if (zone >= 0.2 && zone <= 0.8) {
           if (mode === "sports" || mode === "matchups") {
             flipped = !flipped;
@@ -2150,7 +2300,6 @@
           t.textContent = sport.name;
           wrap.appendChild(t);
 
-          // shows all available games
           sport.matchups.forEach((m, mIndex) => {
             const gi = document.createElement("div");
             gi.className = "game-item";
@@ -2231,10 +2380,9 @@
         authItem.addEventListener("click", async () => {
           userDropdown.classList.remove("open");
           if (authedUser) {
-            await supabaseClient.auth.signOut();
+            if (supabaseClient) await supabaseClient.auth.signOut();
             authedUser = null;
             showToast("Signed out");
-            authOverlayEl.classList.add("open");
             renderScreen();
           } else {
             authOverlayEl.classList.add("open");
@@ -2243,15 +2391,6 @@
           buildUserDropdown();
         });
         userDropdown.appendChild(authItem);
-
-        if (authedUser && usingLocalFallback) {
-          const note = document.createElement("div");
-          note.className = "user-dropdown-item";
-          note.style.color = "var(--muted)";
-          note.textContent = "⚠ Using local storage (Supabase table issue)";
-          note.style.cursor = "default";
-          userDropdown.appendChild(note);
-        }
       }
 
       userMenuButton.addEventListener("click", (e) => {
@@ -2267,83 +2406,80 @@
       });
 
       /************************************************************
-       * AUTH HANDLERS (ensures sign-in works)
+       * AUTH HANDLERS (login reliability fixed)
        ************************************************************/
-      function authErrorMessage(err) {
-        const msg = err?.message || "Auth failed";
-        // Helpful hint for confirmation-required projects
-        if (/Email not confirmed/i.test(msg) || /confirm/i.test(msg)) {
-          return "Email not confirmed. Use an existing confirmed account or disable email confirmations in Supabase Auth.";
+      async function withAuthLoading(fn) {
+        authSignInBtn.disabled = true;
+        authSignUpBtn.disabled = true;
+        try {
+          await fn();
+        } finally {
+          authSignInBtn.disabled = false;
+          authSignUpBtn.disabled = false;
         }
-        return msg;
       }
 
       authSignInBtn.addEventListener("click", async () => {
-        const email = (authEmailEl.value || "").trim();
-        const password = authPasswordEl.value || "";
-        if (!email || !password) return showToast("Enter email + password");
+        await withAuthLoading(async () => {
+          const email = (authEmailEl.value || "").trim();
+          const password = authPasswordEl.value || "";
+          if (!email || !password) return showToast("Enter email + password");
 
-        if (!supabaseClient) return showToast("Supabase not ready — refresh");
+          if (!supabaseClient) {
+            showToast("Supabase not loaded");
+            return;
+          }
 
-        const res = await supabaseClient.auth.signInWithPassword({ email, password });
-        if (res.error) {
-          showToast(authErrorMessage(res.error));
-          return;
-        }
+          const res = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (res.error) {
+            showToast(res.error.message || "Sign in failed");
+            return;
+          }
 
-        await refreshAuth();
-        showToast("Signed in");
-        authOverlayEl.classList.remove("open");
-        renderScreen();
+          await refreshAuth();
+          showToast("Signed in");
+          renderScreen();
+        });
       });
 
       authSignUpBtn.addEventListener("click", async () => {
-        const email = (authEmailEl.value || "").trim();
-        const password = authPasswordEl.value || "";
-        if (!email || !password) return showToast("Enter email + password");
+        await withAuthLoading(async () => {
+          const email = (authEmailEl.value || "").trim();
+          const password = authPasswordEl.value || "";
+          if (!email || !password) return showToast("Enter email + password");
 
-        if (!supabaseClient) return showToast("Supabase not ready — refresh");
+          if (!supabaseClient) {
+            showToast("Supabase not loaded");
+            return;
+          }
 
-        const res = await supabaseClient.auth.signUp({ email, password });
-        if (res.error) {
-          showToast(authErrorMessage(res.error));
-          return;
-        }
-        showToast("Account created. Check email if confirmation is ON.");
+          const res = await supabaseClient.auth.signUp({ email, password });
+          if (res.error) {
+            showToast(res.error.message || "Sign up failed");
+            return;
+          }
+
+          showToast("Account created. Check email if confirmation is on.");
+        });
       });
 
       /************************************************************
-       * INIT (guarantees supabase global exists before createClient)
+       * INIT
        ************************************************************/
       (async function init() {
-        const ok = await waitForSupabaseGlobal();
-        if (!ok) {
-          showToast("Supabase failed to load (CDN). Check internet.");
-          // still render demo UI, but no auth
-          buildSportsMenu();
-          buildUserDropdown();
-          updateUserMenuLabel();
-          renderScreen();
-          authOverlayEl.classList.add("open");
-          return;
-        }
-
         initSupabase();
         buildSportsMenu();
         buildUserDropdown();
         updateUserMenuLabel();
 
-        // Keep auth state synced
-        supabaseClient.auth.onAuthStateChange(async () => {
+        if (supabaseClient) {
+          // auth state change (this was previously unreliable; now it is inside init after client exists)
+          supabaseClient.auth.onAuthStateChange(async () => {
+            await refreshAuth();
+            renderScreen();
+          });
           await refreshAuth();
-          buildUserDropdown();
-          renderScreen();
-        });
-
-        await refreshAuth();
-
-        // Must be logged in to swipe (overlay opens when trying to swipe; optional: open immediately)
-        if (!authedUser) authOverlayEl.classList.add("open");
+        }
 
         renderScreen();
       })();
