@@ -3204,9 +3204,6 @@
         async function validateSwipe(direction) {
           if (!requireLoginGuard()) return false;
 
-          const canSwipe = await incrementSwipeCount();
-          if (!canSwipe) return false;
-
           loadDailySwipeState();
           const cap = getTierDailyCap();
           if (dailySwipeCount >= cap) {
@@ -3242,70 +3239,86 @@
         }
 
         async function finalizeSwipe(direction) {
-          const todayId = getSwipeDayIdEST();
-          const key = makeLineKey({
-            sportId: meta.sportId,
-            matchupName: meta.matchupName,
-            label: meta.label,
-            book: meta.book
-          });
-
-          if (context === "mybias") {
-            if (direction === "right") {
-              await setBiasStatus(key, "lock");
-              await trackSwipeInDB(key, "confident", "mylocks");
-              showToast("Moved to MyLocks");
-            } else {
-              await setBiasStatus(key, "archived");
-              await trackSwipeInDB(key, biasStore[key].vote, "myarchives");
-              showToast("Moved to MyArchive");
+          try {
+            const canSwipe = await incrementSwipeCount();
+            if (!canSwipe) {
+              console.log('Swipe blocked: incrementSwipeCount returned false');
+              renderScreen();
+              return;
             }
-            renderScreen();
-            return;
+
+            const todayId = getSwipeDayIdEST();
+            const key = makeLineKey({
+              sportId: meta.sportId,
+              matchupName: meta.matchupName,
+              label: meta.label,
+              book: meta.book
+            });
+
+            console.log('Finalizing swipe:', { direction, context, key });
+
+            if (context === "mybias") {
+              if (direction === "right") {
+                await setBiasStatus(key, "lock");
+                await trackSwipeInDB(key, "confident", "mylocks");
+                showToast("Moved to MyLocks");
+              } else {
+                await setBiasStatus(key, "archived");
+                await trackSwipeInDB(key, biasStore[key].vote, "myarchives");
+                showToast("Moved to MyArchive");
+              }
+              renderScreen();
+              return;
+            }
+
+            const vote = direction === "right" ? "confident" : "doubt";
+
+            dailySwipeDayId = todayId;
+            dailySwipeCount += 1;
+            await persistDailySwipeCount();
+
+            sessionSwipeCount += 1;
+            backendSwipeCount += 1;
+            await persistBackendSwipeCount();
+
+            const communityConf = typeof ln.confident === "number" ? ln.confident : 50;
+            const communityDoubt = typeof ln.doubt === "number" ? ln.doubt : 50;
+
+            const existingStatus = biasStore[key]?.status;
+            const status = existingStatus ? existingStatus : "inbox";
+
+            await upsertBias({
+              key,
+              sportId: meta.sportId,
+              sportName: meta.sportName,
+              sportIndex: meta.sportIndex,
+              matchupIndex: meta.matchupIndex,
+              matchupName: meta.matchupName,
+              lineLabel: meta.label,
+              category: meta.category,
+              book: meta.book,
+              vote,
+              status,
+              communityConfident: communityConf,
+              communityDoubt: communityDoubt,
+              lastSwipedDayId: todayId,
+            });
+
+            console.log('Saved to biasStore:', biasStore[key]);
+
+            await trackSwipeInDB(key, vote, "mybias");
+
+            markCardDisabledAndDrop(card);
+            const swipeEmoji = vote === "confident" ? "✅" : "🤔";
+            showToast(`${vote === "confident" ? "Confident" : "Doubt It"} ${swipeEmoji}`);
+
+            incrementFreshSwipes();
+
+            if (isCommunityUnlocked()) renderScreen();
+          } catch (err) {
+            console.error('Error in finalizeSwipe:', err);
+            showToast('Error saving swipe');
           }
-
-          const vote = direction === "right" ? "confident" : "doubt";
-
-          dailySwipeDayId = todayId;
-          dailySwipeCount += 1;
-          await persistDailySwipeCount();
-
-          sessionSwipeCount += 1;
-          backendSwipeCount += 1;
-          await persistBackendSwipeCount();
-
-          const communityConf = typeof ln.confident === "number" ? ln.confident : 50;
-          const communityDoubt = typeof ln.doubt === "number" ? ln.doubt : 50;
-
-          const existingStatus = biasStore[key]?.status;
-          const status = existingStatus ? existingStatus : "inbox";
-
-          await upsertBias({
-            key,
-            sportId: meta.sportId,
-            sportName: meta.sportName,
-            sportIndex: meta.sportIndex,
-            matchupIndex: meta.matchupIndex,
-            matchupName: meta.matchupName,
-            lineLabel: meta.label,
-            category: meta.category,
-            book: meta.book,
-            vote,
-            status,
-            communityConfident: communityConf,
-            communityDoubt: communityDoubt,
-            lastSwipedDayId: todayId,
-          });
-
-          await trackSwipeInDB(key, vote, "mybias");
-
-          markCardDisabledAndDrop(card);
-          const swipeEmoji = vote === "confident" ? "✅" : "🤔";
-          showToast(`${vote === "confident" ? "Confident" : "Doubt It"} ${swipeEmoji}`);
-
-          incrementFreshSwipes();
-
-          if (isCommunityUnlocked()) renderScreen();
         }
 
         function resetCardVisual() {
@@ -3333,9 +3346,12 @@
           const dx = lastX - startX;
           const dy = lastY - startY;
 
+          console.log('Pointer up:', { dx, dy, threshold: SWIPE_THRESHOLD });
+
           const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5;
 
           if (!isValidSwipe) {
+            console.log('Invalid swipe - resetting card');
             card.style.transition = "all 0.3s ease-out";
             resetCardVisual();
             return;
@@ -3344,22 +3360,25 @@
           e.stopPropagation();
 
           const direction = dx > 0 ? "right" : "left";
+          console.log('Valid swipe detected:', direction);
 
           const canProceed = await validateSwipe(direction);
           if (!canProceed) {
+            console.log('Swipe validation failed');
             card.style.transition = "all 0.3s ease-out";
             resetCardVisual();
             return;
           }
 
+          console.log('Swipe validated - animating card');
           const flyDistance = direction === "right" ? 400 : -400;
-          card.style.transition = "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          card.style.transition = "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)";
           card.style.transform = `translateX(${flyDistance}px) rotate(${flyDistance * 0.1}deg)`;
           card.style.opacity = "0";
 
-          setTimeout(() => {
-            finalizeSwipe(direction);
-          }, 100);
+          setTimeout(async () => {
+            await finalizeSwipe(direction);
+          }, 350);
         });
 
         card.addEventListener("pointercancel", () => {
