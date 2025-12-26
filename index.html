@@ -805,6 +805,114 @@
       .auth-secondary { background: rgba(15,23,42,0.04); border: 1px solid var(--border); color: var(--text); }
       html[data-theme="dark"] .auth-secondary { background: rgba(148,163,184,0.10); border-color: #1f2937; }
 
+      .auth-divider {
+        display: flex;
+        align-items: center;
+        margin: 16px 0;
+        text-align: center;
+      }
+      .auth-divider::before,
+      .auth-divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid var(--border);
+      }
+      .auth-divider span {
+        padding: 0 12px;
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .auth-oauth-buttons {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .auth-oauth-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .auth-oauth-btn:hover {
+        background: rgba(15,23,42,0.04);
+        border-color: rgba(148,163,184,0.4);
+      }
+      html[data-theme="dark"] .auth-oauth-btn:hover {
+        background: rgba(148,163,184,0.10);
+      }
+
+      .auth-phone-section {
+        margin-top: 12px;
+      }
+
+      /* Fresh Swipes Overlay */
+      .fresh-swipes-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.85);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        padding: 16px;
+      }
+      .fresh-swipes-overlay.hidden { display: none; }
+
+      .fresh-swipes-card {
+        width: 100%;
+        max-width: 360px;
+        background: var(--card);
+        border-radius: 24px;
+        border: 1px solid var(--border);
+        padding: 32px 24px;
+        box-shadow: 0 26px 60px var(--shadow2);
+        text-align: center;
+      }
+
+      .fresh-swipes-title {
+        font-size: 24px;
+        font-weight: 900;
+        margin: 0 0 8px;
+        color: var(--text);
+      }
+
+      .fresh-swipes-subtitle {
+        font-size: 14px;
+        color: var(--muted);
+        margin: 0 0 24px;
+      }
+
+      .fresh-swipes-counter {
+        font-size: 48px;
+        font-weight: 900;
+        color: var(--blue);
+        margin: 0 0 16px;
+      }
+
+      .fresh-swipes-counter span {
+        color: var(--accent);
+      }
+
+      .fresh-swipes-note {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
       .auth-note {
         margin-top: 10px;
         font-size: 10px;
@@ -971,15 +1079,60 @@
           <button class="auth-primary" id="auth-signin" type="button">Sign In</button>
         </div>
 
+        <div class="auth-divider">
+          <span>or continue with</span>
+        </div>
+
+        <div class="auth-oauth-buttons">
+          <button class="auth-oauth-btn" id="auth-google" type="button">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/><path d="M9.003 18c2.43 0 4.467-.806 5.956-2.18L12.05 13.56c-.806.54-1.836.86-3.047.86-2.344 0-4.328-1.584-5.036-3.711H.96v2.332C2.44 15.983 5.485 18 9.003 18z" fill="#34A853"/><path d="M3.964 10.712c-.18-.54-.282-1.117-.282-1.71 0-.593.102-1.17.282-1.71V4.96H.957C.347 6.175 0 7.55 0 9.002c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9.003 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.464.891 11.426 0 9.003 0 5.485 0 2.44 2.017.96 4.958L3.967 7.29c.708-2.127 2.692-3.71 5.036-3.71z" fill="#EA4335"/></svg>
+            Google
+          </button>
+          <button class="auth-oauth-btn" id="auth-facebook" type="button">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="#1877F2"><path d="M18 9.05C18 4.05 13.97 0 9 0S0 4.05 0 9.05C0 13.58 3.29 17.34 7.59 18v-6.19H5.31V9.05h2.28V7.04c0-2.25 1.34-3.49 3.39-3.49.98 0 2.01.18 2.01.18v2.21h-1.13c-1.11 0-1.46.69-1.46 1.4v1.68h2.49l-.4 2.76h-2.09V18C14.71 17.34 18 13.58 18 9.05z"/></svg>
+            Facebook
+          </button>
+        </div>
+
+        <div class="auth-divider" style="margin-top: 16px;">
+          <span>or sign in with phone</span>
+        </div>
+
+        <div class="auth-phone-section" id="auth-phone-section">
+          <div class="auth-field">
+            <label for="auth-phone">Phone Number</label>
+            <input id="auth-phone" type="tel" placeholder="+1234567890" autocomplete="tel" />
+          </div>
+          <button class="auth-primary" id="auth-phone-send" type="button">Send Code</button>
+
+          <div class="auth-field" id="auth-otp-field" style="display: none; margin-top: 12px;">
+            <label for="auth-otp">Verification Code</label>
+            <input id="auth-otp" type="text" placeholder="123456" autocomplete="one-time-code" />
+          </div>
+          <button class="auth-primary" id="auth-phone-verify" type="button" style="display: none; margin-top: 8px;">Verify Code</button>
+        </div>
+
         <div class="tiny-link">
           <span></span>
           <button id="auth-resend" type="button">Resend verification</button>
         </div>
 
         <div class="auth-note">
-          If email verification is enabled in Supabase and you don’t receive the email,
+          If email verification is enabled in Supabase and you don't receive the email,
           check spam/promotions or use an existing account. We can adjust Supabase settings next.
         </div>
+      </div>
+    </div>
+
+    <!-- Fresh Swipes Overlay -->
+    <div id="fresh-swipes-overlay" class="fresh-swipes-overlay hidden">
+      <div class="fresh-swipes-card">
+        <div class="fresh-swipes-title">Welcome Back!</div>
+        <div class="fresh-swipes-subtitle">Complete 5 fresh swipes to unlock your data</div>
+        <div class="fresh-swipes-counter">
+          <span id="fresh-swipes-count">0</span> / 5
+        </div>
+        <div class="fresh-swipes-note">Swipe on any line to continue</div>
       </div>
     </div>
 
@@ -1070,6 +1223,11 @@
       let currentTier = "FREE";
       let dailySwipeDayId = "";
       let dailySwipeCount = 0;
+
+      // Fresh Swipes requirement (5 swipes on app reopen)
+      let currentSessionId = null;
+      let freshSwipesCount = 0;
+      let freshSwipesRequired = true;
 
       // UI elements
       const cardEl = document.getElementById("sport-card");
@@ -2405,6 +2563,75 @@
       }
 
       /*******************************
+       * FRESH SWIPES REQUIREMENT
+       *******************************/
+      function generateSessionId() {
+        return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+
+      function checkFreshSwipesRequired() {
+        if (!currentUser) return false;
+
+        const storageKey = `btb_session_${currentUser.id}`;
+        const lastSessionId = localStorage.getItem(storageKey);
+
+        if (lastSessionId !== currentSessionId) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function showFreshSwipesOverlay() {
+        const overlay = document.getElementById('fresh-swipes-overlay');
+        overlay.classList.remove('hidden');
+        updateFreshSwipesCounter();
+      }
+
+      function hideFreshSwipesOverlay() {
+        const overlay = document.getElementById('fresh-swipes-overlay');
+        overlay.classList.add('hidden');
+      }
+
+      function updateFreshSwipesCounter() {
+        const counterEl = document.getElementById('fresh-swipes-count');
+        if (counterEl) {
+          counterEl.textContent = freshSwipesCount;
+        }
+      }
+
+      function incrementFreshSwipes() {
+        if (!freshSwipesRequired) return;
+
+        freshSwipesCount++;
+        updateFreshSwipesCounter();
+
+        if (freshSwipesCount >= 5) {
+          freshSwipesRequired = false;
+          hideFreshSwipesOverlay();
+          showToast("Data unlocked!");
+
+          if (currentUser) {
+            const storageKey = `btb_session_${currentUser.id}`;
+            localStorage.setItem(storageKey, currentSessionId);
+          }
+        }
+      }
+
+      function initFreshSwipesSession() {
+        currentSessionId = generateSessionId();
+        freshSwipesCount = 0;
+        freshSwipesRequired = false;
+
+        if (currentUser) {
+          if (checkFreshSwipesRequired()) {
+            freshSwipesRequired = true;
+            showFreshSwipesOverlay();
+          }
+        }
+      }
+
+      /*******************************
        * USER PROFILE & SWIPE TRACKING
        *******************************/
       const SWIPE_LIMITS = {
@@ -2825,6 +3052,8 @@
 
           markCardDisabledAndDrop(card);
           showToast(existingStatus ? "Updated today ✅" : "Added to MyBias ✅");
+
+          incrementFreshSwipes();
 
           if (isCommunityUnlocked()) renderScreen();
         }
@@ -3634,6 +3863,7 @@
           if (!dbOK) showToast("DB not connected yet (local fallback active)");
 
           await loadUserProfile();
+          initFreshSwipesSession();
 
           buildUserDropdown();
           buildSportsMenu();
@@ -3659,6 +3889,7 @@
             const dbOK = await tryFetchDB();
             if (!dbOK) showToast("DB not connected yet (local fallback active)");
             await loadUserProfile();
+            initFreshSwipesSession();
             buildUserDropdown();
             renderScreen();
 
@@ -3729,6 +3960,7 @@
         if (!dbOK) showToast("DB not connected yet (local fallback active)");
 
         await loadUserProfile();
+        initFreshSwipesSession();
 
         buildUserDropdown();
         renderScreen();
@@ -3776,6 +4008,7 @@
           const dbOK = await tryFetchDB();
           if (!dbOK) showToast("DB not connected yet (local fallback active)");
           await loadUserProfile();
+          initFreshSwipesSession();
           buildUserDropdown();
           renderScreen();
           showToast("Account created & signed in");
@@ -3818,9 +4051,148 @@
         showToast("Verification email resent");
       }
 
+      async function handleGoogleSignIn() {
+        if (!supa) return showToast("Supabase not loaded");
+
+        const { error } = await supa.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin
+          }
+        });
+
+        if (error) {
+          openModal({
+            title: "Google sign in failed",
+            body: error.message,
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+        }
+      }
+
+      async function handleFacebookSignIn() {
+        if (!supa) return showToast("Supabase not loaded");
+
+        const { error } = await supa.auth.signInWithOAuth({
+          provider: 'facebook',
+          options: {
+            redirectTo: window.location.origin
+          }
+        });
+
+        if (error) {
+          openModal({
+            title: "Facebook sign in failed",
+            body: error.message,
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+        }
+      }
+
+      let phoneNumberForVerification = null;
+
+      async function handlePhoneSendCode() {
+        if (!supa) return showToast("Supabase not loaded");
+        const phone = (document.getElementById('auth-phone').value || "").trim();
+
+        if (!phone) {
+          openModal({
+            title: "Missing phone number",
+            body: "Enter your phone number with country code (e.g., +1234567890).",
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+          return;
+        }
+
+        const { error } = await supa.auth.signInWithOtp({
+          phone: phone
+        });
+
+        if (error) {
+          openModal({
+            title: "Failed to send code",
+            body: error.message,
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+          return;
+        }
+
+        phoneNumberForVerification = phone;
+        document.getElementById('auth-otp-field').style.display = 'block';
+        document.getElementById('auth-phone-verify').style.display = 'block';
+        showToast("Verification code sent");
+      }
+
+      async function handlePhoneVerify() {
+        if (!supa) return showToast("Supabase not loaded");
+        const phone = phoneNumberForVerification;
+        const token = (document.getElementById('auth-otp').value || "").trim();
+
+        if (!phone || !token) {
+          openModal({
+            title: "Missing information",
+            body: "Please enter the verification code.",
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+          return;
+        }
+
+        const { data, error } = await supa.auth.verifyOtp({
+          phone: phone,
+          token: token,
+          type: 'sms'
+        });
+
+        if (error) {
+          openModal({
+            title: "Verification failed",
+            body: error.message,
+            actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+          });
+          return;
+        }
+
+        if (data?.session?.user) {
+          currentUser = { id: data.session.user.id, email: data.session.user.email || data.session.user.phone };
+          hideAuth();
+
+          sessionSwipeCount = 0;
+          try { localStorage.setItem(localSessionCountKey(), String(sessionSwipeCount || 0)); } catch {}
+
+          loadLocal();
+
+          const dbOK = await tryFetchDB();
+          if (!dbOK) showToast("DB not connected yet (local fallback active)");
+          await loadUserProfile();
+          initFreshSwipesSession();
+          buildUserDropdown();
+          renderScreen();
+          showToast("Signed in with phone");
+
+          scheduleNext3amJobs();
+          await runDailySnapshotIfDue();
+
+          document.getElementById('auth-otp-field').style.display = 'none';
+          document.getElementById('auth-phone-verify').style.display = 'none';
+          document.getElementById('auth-phone').value = '';
+          document.getElementById('auth-otp').value = '';
+          phoneNumberForVerification = null;
+        }
+      }
+
       authSignInBtn.addEventListener("click", () => handleSignIn());
       authSignUpBtn.addEventListener("click", () => handleSignUp());
       authResendBtn.addEventListener("click", () => handleResend());
+
+      const authGoogleBtn = document.getElementById('auth-google');
+      const authFacebookBtn = document.getElementById('auth-facebook');
+      const authPhoneSendBtn = document.getElementById('auth-phone-send');
+      const authPhoneVerifyBtn = document.getElementById('auth-phone-verify');
+
+      authGoogleBtn.addEventListener("click", () => handleGoogleSignIn());
+      authFacebookBtn.addEventListener("click", () => handleFacebookSignIn());
+      authPhoneSendBtn.addEventListener("click", () => handlePhoneSendCode());
+      authPhoneVerifyBtn.addEventListener("click", () => handlePhoneVerify());
 
       /*******************************
        * INIT
