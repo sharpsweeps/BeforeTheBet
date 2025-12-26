@@ -2978,6 +2978,8 @@
 
       function markCardDisabledAndDrop(cardEl) {
         cardEl.classList.add("disabled");
+        cardEl.style.transform = "";
+        cardEl.style.transition = "all 0.3s ease";
         const parent = cardEl.parentElement;
         if (parent) parent.appendChild(cardEl);
       }
@@ -3040,8 +3042,8 @@
         let isHorizontalGesture = false;
         let holdTimer = null;
 
-        const SWIPE_THRESHOLD = 15;
-        const INTENT_THRESHOLD = 5;
+        const SWIPE_THRESHOLD = 25;
+        const INTENT_THRESHOLD = 6;
 
         card.style.position = 'relative';
         card.style.touchAction = 'pan-y';
@@ -3161,7 +3163,7 @@
           const dy = lastY - startY;
 
           if (!isHorizontalGesture) {
-            if (Math.abs(dx) > INTENT_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+            if (Math.abs(dx) > INTENT_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
               isHorizontalGesture = true;
               clearTimeout(holdTimer);
             }
@@ -3185,10 +3187,10 @@
               card.style.borderWidth = '3px';
 
               if (clamp > 0) {
-                confidentOverlay.style.opacity = String(Math.min(1, absClamp / 50));
+                confidentOverlay.style.opacity = String(Math.min(1, absClamp / 60));
                 doubtOverlay.style.opacity = '0';
               } else {
-                doubtOverlay.style.opacity = String(Math.min(1, absClamp / 50));
+                doubtOverlay.style.opacity = String(Math.min(1, absClamp / 60));
                 confidentOverlay.style.opacity = '0';
               }
             } else {
@@ -3338,7 +3340,7 @@
           isDown = false;
 
           if (pointerId !== e.pointerId) {
-            card.style.transition = "all 0.2s ease-out";
+            card.style.transition = "all 0.25s ease-out";
             resetCardVisual();
             return;
           }
@@ -3348,11 +3350,11 @@
 
           console.log('Pointer up:', { dx, dy, threshold: SWIPE_THRESHOLD });
 
-          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.7;
+          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.2;
 
           if (!isValidSwipe) {
             console.log('Invalid swipe - resetting card');
-            card.style.transition = "all 0.2s ease-out";
+            card.style.transition = "all 0.25s ease-out";
             resetCardVisual();
             return;
           }
@@ -3365,32 +3367,32 @@
           const canProceed = await validateSwipe(direction);
           if (!canProceed) {
             console.log('Swipe validation failed');
-            card.style.transition = "all 0.3s ease-out";
+            card.style.transition = "all 0.25s ease-out";
             resetCardVisual();
             return;
           }
 
           console.log('Swipe validated - animating card');
-          const flyDistance = direction === "right" ? 400 : -400;
-          card.style.transition = "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)";
-          card.style.transform = `translateX(${flyDistance}px) rotate(${flyDistance * 0.1}deg)`;
+          const flyDistance = direction === "right" ? 500 : -500;
+          card.style.transition = "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          card.style.transform = `translateX(${flyDistance}px) rotate(${flyDistance * 0.15}deg)`;
           card.style.opacity = "0";
 
           setTimeout(async () => {
             await finalizeSwipe(direction);
-          }, 220);
+          }, 280);
         });
 
         card.addEventListener("pointercancel", () => {
           clearTimeout(holdTimer);
           isDown = false;
-          card.style.transition = "all 0.2s ease-out";
+          card.style.transition = "all 0.25s ease-out";
           resetCardVisual();
         });
 
         card.addEventListener("pointerleave", () => {
           if (!isDown) {
-            card.style.transition = "all 0.2s ease-out";
+            card.style.transition = "all 0.25s ease-out";
             resetCardVisual();
           }
         });
