@@ -861,46 +861,58 @@
       /* Fresh Swipes Overlay */
       .fresh-swipes-overlay {
         position: fixed;
-        inset: 0;
-        background: rgba(2, 6, 23, 0.85);
-        backdrop-filter: blur(8px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%);
         z-index: 999;
         padding: 16px;
+        animation: slideDown 0.3s ease-out;
+        pointer-events: none;
       }
-      .fresh-swipes-overlay.hidden { display: none; }
+      .fresh-swipes-overlay.hidden {
+        display: none;
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
 
       .fresh-swipes-card {
-        width: 100%;
-        max-width: 360px;
         background: var(--card);
-        border-radius: 24px;
+        border-radius: 16px;
         border: 1px solid var(--border);
-        padding: 32px 24px;
-        box-shadow: 0 26px 60px var(--shadow2);
+        padding: 20px 28px;
+        box-shadow: 0 12px 40px var(--shadow2);
         text-align: center;
+        min-width: 320px;
+        pointer-events: auto;
       }
 
       .fresh-swipes-title {
-        font-size: 24px;
+        font-size: 18px;
         font-weight: 900;
-        margin: 0 0 8px;
+        margin: 0 0 6px;
         color: var(--text);
       }
 
       .fresh-swipes-subtitle {
-        font-size: 14px;
+        font-size: 13px;
         color: var(--muted);
-        margin: 0 0 24px;
+        margin: 0 0 16px;
       }
 
       .fresh-swipes-counter {
-        font-size: 48px;
+        font-size: 32px;
         font-weight: 900;
         color: var(--blue);
-        margin: 0 0 16px;
+        margin: 0 0 12px;
       }
 
       .fresh-swipes-counter span {
@@ -908,7 +920,7 @@
       }
 
       .fresh-swipes-note {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--muted);
         font-weight: 600;
       }
@@ -2586,6 +2598,10 @@
         const overlay = document.getElementById('fresh-swipes-overlay');
         overlay.classList.remove('hidden');
         updateFreshSwipesCounter();
+
+        setTimeout(() => {
+          hideFreshSwipesOverlay();
+        }, 3000);
       }
 
       function hideFreshSwipesOverlay() {
@@ -2605,16 +2621,18 @@
 
         freshSwipesCount++;
         updateFreshSwipesCounter();
+        updateSwipeCounter();
 
         if (freshSwipesCount >= 5) {
           freshSwipesRequired = false;
-          hideFreshSwipesOverlay();
           showToast("Data unlocked!");
 
           if (currentUser) {
             const storageKey = `btb_session_${currentUser.id}`;
             localStorage.setItem(storageKey, currentSessionId);
           }
+
+          updateSwipeCounter();
         }
       }
 
@@ -2629,6 +2647,8 @@
             showFreshSwipesOverlay();
           }
         }
+
+        updateSwipeCounter();
       }
 
       /*******************************
@@ -2717,6 +2737,11 @@
 
         if (!currentUser || !currentUserProfile) {
           swipeCounterEl.textContent = '--';
+          return;
+        }
+
+        if (freshSwipesRequired) {
+          swipeCounterEl.textContent = `${freshSwipesCount}/5 Fresh`;
           return;
         }
 
