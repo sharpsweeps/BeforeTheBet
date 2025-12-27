@@ -979,6 +979,48 @@
         max-width: 100%;
         box-sizing: border-box;
       }
+
+      .nav-buttons {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .nav-btn {
+        padding: 10px 20px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px var(--shadow);
+      }
+
+      .nav-btn:hover {
+        background: var(--bg2);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px var(--shadow);
+      }
+
+      .nav-btn:active {
+        transform: translateY(0);
+      }
+
+      .nav-btn.primary {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+
+      .nav-btn.primary:hover {
+        opacity: 0.9;
+      }
     </style>
   </head>
 
@@ -1015,10 +1057,11 @@
           <div class="title-block">
             <h1 id="main-title">Select Your Sport</h1>
             <p id="subtitle">One card at a time. Browse games and lines.</p>
-            <div class="directions" id="directions">
+            <div class="directions" id="directions" style="display: none;">
               Double-click the <strong>center</strong> to open. Swipe lines:
               <strong>Doubt It</strong> (left) or <strong>Confident</strong> (right).
             </div>
+            <div class="nav-buttons" id="nav-buttons"></div>
           </div>
 
           <div class="card-container">
@@ -1261,6 +1304,7 @@
       const titleEl = document.getElementById("main-title");
       const subtitleEl = document.getElementById("subtitle");
       const directionsEl = document.getElementById("directions");
+      const navButtonsEl = document.getElementById("nav-buttons");
       const backToSportsBtn = document.getElementById("back-to-sports");
 
       const sportsMenuEl = document.getElementById("sports-menu");
@@ -3295,8 +3339,8 @@
         let isHorizontalGesture = false;
         let holdTimer = null;
 
-        const SWIPE_THRESHOLD = 35;
-        const INTENT_THRESHOLD = 8;
+        const SWIPE_THRESHOLD = 20;
+        const INTENT_THRESHOLD = 5;
 
         card.style.position = 'relative';
         card.style.touchAction = 'pan-y';
@@ -3599,7 +3643,7 @@
 
           console.log('Pointer up:', { dx, dy, threshold: SWIPE_THRESHOLD });
 
-          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.6;
+          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.4;
 
           if (!isValidSwipe) {
             console.log('Invalid swipe - resetting card');
@@ -3940,23 +3984,50 @@
        * SCREEN RENDER
        *******************************/
       function renderScreen() {
+        navButtonsEl.innerHTML = "";
+
         if (mode === "sports") {
           titleEl.textContent = "Select Your Sport";
-          subtitleEl.textContent = "Double-click center to open. (Swiping requires login.)";
-          directionsEl.innerHTML =
-            'Sports: click left/right edges to change. Double-click center to see games.';
-
+          subtitleEl.textContent = "";
           backToSportsBtn.style.display = "none";
 
           renderSportsFront();
           renderSportsBack();
-        } else if (mode === "matchups") {
+        } else if (mode === "topLines") {
           const sport = currentSport();
-          titleEl.textContent = `${sport.name} Games`;
-          subtitleEl.textContent = "Click edges to change game. Double-click center to open lines.";
-          directionsEl.innerHTML =
-            'Double-click center to open. Card stays open until you double-click center again.';
+          const matchup = currentMatchup();
+          titleEl.textContent = `${sport.name}`;
+          subtitleEl.textContent = matchup.name;
           backToSportsBtn.style.display = "inline-flex";
+
+          const prevBtn = document.createElement("button");
+          prevBtn.className = "nav-btn";
+          prevBtn.textContent = "← Previous Game";
+          prevBtn.addEventListener("click", () => {
+            currentMatchupIndex = getPrevIndex(currentSport().matchups.length, currentMatchupIndex);
+            renderScreen();
+          });
+
+          const allLinesBtn = document.createElement("button");
+          allLinesBtn.className = "nav-btn primary";
+          allLinesBtn.textContent = "View All Lines";
+          allLinesBtn.addEventListener("click", () => {
+            mode = "allLines";
+            flipped = true;
+            renderScreen();
+          });
+
+          const nextBtn = document.createElement("button");
+          nextBtn.className = "nav-btn";
+          nextBtn.textContent = "Next Game →";
+          nextBtn.addEventListener("click", () => {
+            currentMatchupIndex = getNextIndex(currentSport().matchups.length, currentMatchupIndex);
+            renderScreen();
+          });
+
+          navButtonsEl.appendChild(prevBtn);
+          navButtonsEl.appendChild(allLinesBtn);
+          navButtonsEl.appendChild(nextBtn);
 
           renderMatchupsFront();
           renderLinesBack({ allLines: false });
@@ -3965,21 +4036,27 @@
           const matchup = currentMatchup();
           titleEl.textContent = `${sport.name} – All Lines`;
           subtitleEl.textContent = matchup.name;
-          directionsEl.innerHTML =
-            'All Lines stays open here. Double-click center to close/open. Double-click a line for details.';
           backToSportsBtn.style.display = "inline-flex";
+
+          const backBtn = document.createElement("button");
+          backBtn.className = "nav-btn";
+          backBtn.textContent = "← Back to Top Lines";
+          backBtn.addEventListener("click", () => {
+            mode = "topLines";
+            flipped = true;
+            renderScreen();
+          });
+
+          navButtonsEl.appendChild(backBtn);
 
           renderMatchupsFront();
           renderLinesBack({ allLines: true });
         } else if (mode === "lineDetails") {
-          // Line Details now handled by showLineDetailsPage(), skip card rendering
           return;
         } else if (mode === "mybias") {
           const biasCount = Object.values(biasStore).filter(x => x.status === "inbox").length;
           titleEl.textContent = `MyBias (${biasCount})`;
           subtitleEl.textContent = "Your cart";
-          directionsEl.innerHTML =
-            'Cart: swipe right → MyLocks (checkout), swipe left → MyArchive (save for later). Hold a line to change its bias.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderMyBiasFront();
@@ -3988,8 +4065,6 @@
           const locksCount = Object.values(biasStore).filter(x => x.status === "lock").length;
           titleEl.textContent = `MyLocks (${locksCount})`;
           subtitleEl.textContent = "Checkout page";
-          directionsEl.innerHTML =
-            'One PLACE BET button per sportsbook. Hold a lock to remove it.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderLocksFront();
@@ -3998,8 +4073,6 @@
           const archiveCount = Object.values(biasStore).filter(x => x.status === "archived").length;
           titleEl.textContent = `MyArchive (${archiveCount})`;
           subtitleEl.textContent = "Save for later";
-          directionsEl.innerHTML =
-            'Save for later. Hold a line to change its bias (only that line). Double-click for details.';
           backToSportsBtn.style.display = "inline-flex";
 
           renderArchiveFront();
@@ -4016,9 +4089,9 @@
           mode = previousModeBeforeLineDetails;
           flipped = true;
         } else if (mode === "allLines") {
-          mode = "matchups";
-          flipped = false;
-        } else if (mode === "matchups") {
+          mode = "topLines";
+          flipped = true;
+        } else if (mode === "topLines") {
           mode = "sports";
           flipped = false;
         } else if (mode === "mybias" || mode === "locks" || mode === "archive") {
@@ -4046,19 +4119,27 @@
         const x = e.clientX - rect.left;
         const zone = x / rect.width;
 
-        if (mode === "matchups" || mode === "allLines") {
+        if (mode === "topLines") {
           if (zone < 0.2) {
             currentMatchupIndex = getPrevIndex(currentSport().matchups.length, currentMatchupIndex);
-            flipped = (mode === "allLines") ? true : false;
             renderScreen();
             return;
           }
           if (zone > 0.8) {
             currentMatchupIndex = getNextIndex(currentSport().matchups.length, currentMatchupIndex);
-            flipped = (mode === "allLines") ? true : false;
             renderScreen();
             return;
           }
+          if (zone >= 0.2 && zone <= 0.8 && !flipped) {
+            mode = "allLines";
+            flipped = true;
+            renderScreen();
+            return;
+          }
+          return;
+        }
+
+        if (mode === "allLines") {
           return;
         }
 
@@ -4082,9 +4163,6 @@
           currentSportIndex = getNextIndex(SPORTS.length, currentSportIndex);
           flipped = false;
           renderScreen();
-        } else {
-          flipped = !flipped;
-          renderCardFlipState();
         }
       }
 
@@ -4107,31 +4185,10 @@
         }
 
         if (mode === "sports" && zone >= 0.2 && zone <= 0.8) {
-          mode = "matchups";
+          mode = "topLines";
           currentMatchupIndex = 0;
-          flipped = false;
+          flipped = true;
           renderScreen();
-          return;
-        }
-
-        if (mode === "matchups") {
-          if (flipped === true && (zone < 0.2 || zone > 0.8)) {
-            mode = "allLines";
-            flipped = true;
-            renderScreen();
-            return;
-          }
-
-          if (zone >= 0.2 && zone <= 0.8) {
-            flipped = !flipped;
-            renderCardFlipState();
-            return;
-          }
-        }
-
-        if (mode === "allLines" && zone >= 0.2 && zone <= 0.8) {
-          flipped = !flipped;
-          renderCardFlipState();
           return;
         }
 
@@ -4139,7 +4196,7 @@
       }
 
       cardClickArea.addEventListener("click", (e) => {
-        if (flipped && (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines")) {
+        if (flipped && (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines" || mode === "topLines")) {
           return;
         }
 
@@ -4164,8 +4221,8 @@
         let pointerId = null;
         let intentLocked = false;
 
-        const SWIPE_THRESHOLD = 35;
-        const INTENT_THRESHOLD = 8;
+        const SWIPE_THRESHOLD = 20;
+        const INTENT_THRESHOLD = 5;
 
         cardClickArea.addEventListener("pointerdown", (e) => {
           if (flipped) return;
