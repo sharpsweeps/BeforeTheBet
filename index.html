@@ -3295,8 +3295,8 @@
         let isHorizontalGesture = false;
         let holdTimer = null;
 
-        const SWIPE_THRESHOLD = 50;
-        const INTENT_THRESHOLD = 10;
+        const SWIPE_THRESHOLD = 35;
+        const INTENT_THRESHOLD = 8;
 
         card.style.position = 'relative';
         card.style.touchAction = 'pan-y';
@@ -3563,6 +3563,7 @@
             showToast(`${vote === "confident" ? "Confident" : "Doubt It"} ${swipeEmoji}`);
 
             incrementFreshSwipes();
+            updateSwipeCounter();
 
             if (isCommunityUnlocked()) renderScreen();
           } catch (err) {
@@ -3598,7 +3599,7 @@
 
           console.log('Pointer up:', { dx, dy, threshold: SWIPE_THRESHOLD });
 
-          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.8;
+          const isValidSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.6;
 
           if (!isValidSwipe) {
             console.log('Invalid swipe - resetting card');
@@ -3974,7 +3975,8 @@
           // Line Details now handled by showLineDetailsPage(), skip card rendering
           return;
         } else if (mode === "mybias") {
-          titleEl.textContent = "MyBias";
+          const biasCount = Object.values(biasStore).filter(x => x.status === "inbox").length;
+          titleEl.textContent = `MyBias (${biasCount})`;
           subtitleEl.textContent = "Your cart";
           directionsEl.innerHTML =
             'Cart: swipe right → MyLocks (checkout), swipe left → MyArchive (save for later). Hold a line to change its bias.';
@@ -3983,7 +3985,8 @@
           renderMyBiasFront();
           renderMyBiasBack();
         } else if (mode === "locks") {
-          titleEl.textContent = "MyLocks";
+          const locksCount = Object.values(biasStore).filter(x => x.status === "lock").length;
+          titleEl.textContent = `MyLocks (${locksCount})`;
           subtitleEl.textContent = "Checkout page";
           directionsEl.innerHTML =
             'One PLACE BET button per sportsbook. Hold a lock to remove it.';
@@ -3992,7 +3995,8 @@
           renderLocksFront();
           renderLocksBack();
         } else if (mode === "archive") {
-          titleEl.textContent = "MyArchive";
+          const archiveCount = Object.values(biasStore).filter(x => x.status === "archived").length;
+          titleEl.textContent = `MyArchive (${archiveCount})`;
           subtitleEl.textContent = "Save for later";
           directionsEl.innerHTML =
             'Save for later. Hold a line to change its bias (only that line). Double-click for details.';
@@ -4135,6 +4139,10 @@
       }
 
       cardClickArea.addEventListener("click", (e) => {
+        if (flipped && (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines")) {
+          return;
+        }
+
         if (clickTimeout) {
           clearTimeout(clickTimeout);
           clickTimeout = null;
@@ -4156,8 +4164,8 @@
         let pointerId = null;
         let intentLocked = false;
 
-        const SWIPE_THRESHOLD = 50;
-        const INTENT_THRESHOLD = 10;
+        const SWIPE_THRESHOLD = 35;
+        const INTENT_THRESHOLD = 8;
 
         cardClickArea.addEventListener("pointerdown", (e) => {
           if (flipped) return;
