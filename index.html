@@ -3878,11 +3878,17 @@
           const biasItem = biasStore[key];
           if (!biasItem) return;
 
+          const teams = biasItem.matchupName.split(' @ ');
+          const awayTeam = teams[0] || biasItem.matchupName;
+          const homeTeam = teams[1] || biasItem.matchupName;
+
+          const uniqueGameId = `${biasItem.sportId}_${biasItem.matchupName}_${biasItem.lineLabel}_${biasItem.book}`;
+
           const lineData = {
-            game_id: `${biasItem.sportId}_${biasItem.matchupName}`,
-            home_team: biasItem.matchupName.split(' @ ')[1] || biasItem.matchupName,
-            away_team: biasItem.matchupName.split(' @ ')[0] || biasItem.matchupName,
-            sport: biasItem.sportId || 'NFL',
+            game_id: uniqueGameId,
+            home_team: homeTeam,
+            away_team: awayTeam,
+            sport: biasItem.sportId.toUpperCase() || 'NFL',
             sportsbook: biasItem.book || 'Best Available',
             game_time: new Date(Date.now() + 86400000).toISOString(),
             is_active: true
@@ -3891,23 +3897,30 @@
           const { data: existingLine } = await supa
             .from('lines')
             .select('id')
-            .eq('game_id', lineData.game_id)
-            .eq('sportsbook', lineData.sportsbook)
+            .eq('game_id', uniqueGameId)
             .maybeSingle();
 
           let lineId;
           if (existingLine) {
             lineId = existingLine.id;
           } else {
-            const { data: newLine } = await supa
+            const { data: newLine, error: lineError } = await supa
               .from('lines')
               .insert([lineData])
               .select('id')
-              .single();
+              .maybeSingle();
+
+            if (lineError) {
+              console.error('Error creating line:', lineError);
+              return;
+            }
             lineId = newLine?.id;
           }
 
-          if (!lineId) return;
+          if (!lineId) {
+            console.error('No line ID available');
+            return;
+          }
 
           const swipeData = {
             user_id: currentUser.id,
@@ -3917,9 +3930,16 @@
             swiped_from: mode || 'allLines'
           };
 
-          await supa
+          const { error: swipeError } = await supa
             .from('swipes')
             .upsert([swipeData], { onConflict: 'user_id,line_id' });
+
+          if (swipeError) {
+            console.error('Error upserting swipe:', swipeError);
+            return;
+          }
+
+          console.log('Swipe tracked successfully:', { lineId, direction, status });
 
         } catch (err) {
           console.error('Error tracking swipe in DB:', err);
