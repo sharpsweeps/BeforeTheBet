@@ -1258,6 +1258,15 @@
             <div class="back-footer-note" id="all-lines-footer-note"></div>
           </div>
 
+          <!-- ADMIN PAGE -->
+          <div class="line-details-page" id="admin-page">
+            <div class="line-details-header">
+              <button id="admin-back" class="line-details-back-btn" type="button">← Back</button>
+              <h2 id="admin-title">Sportsbook Admin</h2>
+            </div>
+            <div class="line-details-content" id="admin-content"></div>
+          </div>
+
           <!-- MYBIAS PAGE -->
           <div class="mybias-page" id="mybias-page">
             <div class="line-details-header">
@@ -2703,13 +2712,26 @@
           const groupBtn = document.createElement("button");
           groupBtn.className = "sportsbook-cta-btn";
           groupBtn.textContent = `PLACE BET IN ${String(book || "SPORTSBOOK").toUpperCase()}`;
-          groupBtn.addEventListener("click", (e) => {
+          groupBtn.style.cursor = "pointer";
+          groupBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
-            openModal({
-              title: "Coming soon",
-              body: `Affiliate deep-links for ${book} will go here.`,
-              actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
-            });
+
+            const sportsbooks = await fetchActiveSportsbooks();
+            const sportsbookData = sportsbooks.find(s => s.name === book);
+
+            if (sportsbookData?.affiliate_link) {
+              await trackUserInteraction('affiliate_click', {
+                sportsbook_id: sportsbookData.id,
+                sportsbook_name: book
+              });
+              window.open(sportsbookData.affiliate_link, '_blank');
+            } else {
+              openModal({
+                title: "Coming soon",
+                body: `Affiliate link for ${book} will be available soon.`,
+                actions: [{ label: "OK", variant: "primary", onClick: () => {} }],
+              });
+            }
           });
           matchupsListEl.appendChild(groupBtn);
         });
@@ -3004,7 +3026,7 @@
         showLineDetailsPage();
       }
 
-      function showLineDetailsPage() {
+      async function showLineDetailsPage() {
         const stats = currentLineDetailStats;
         const meta = currentLineDetailMeta;
 
@@ -3021,6 +3043,12 @@
 
         const contentEl = document.getElementById('line-details-content');
         contentEl.innerHTML = '';
+
+        await trackUserInteraction('line_view', {
+          line_label: meta.label,
+          sport: stats.sportName,
+          matchup: stats.matchupName
+        });
 
         // Card 1: Line Info
         const c1 = document.createElement('div');
@@ -3084,6 +3112,80 @@
             <div class="line-details-text">Progress: ${sessionSwipeCount || 0}/5</div>
           `;
           contentEl.appendChild(c4);
+        }
+
+        const sportId = meta.sportId || stats.sportId;
+        const matchupName = meta.matchupName || stats.matchupName;
+        const realLines = await fetchLinesForGame(sportId, matchupName);
+
+        if (realLines.length > 0) {
+          const linesBySportsbook = {};
+          realLines.forEach(line => {
+            const bookName = line.sportsbooks?.name || line.sportsbook || 'Unknown';
+            if (!linesBySportsbook[bookName]) {
+              linesBySportsbook[bookName] = {
+                lines: [],
+                sportsbookData: line.sportsbooks
+              };
+            }
+            linesBySportsbook[bookName].lines.push(line);
+          });
+
+          const sortedBooks = Object.keys(linesBySportsbook).sort();
+
+          sortedBooks.forEach(bookName => {
+            const headerCard = document.createElement('div');
+            headerCard.className = 'line-details-card';
+            headerCard.style.background = 'rgba(37, 99, 235, 0.08)';
+            headerCard.style.borderLeft = '3px solid #2563eb';
+            headerCard.innerHTML = `
+              <div class="line-details-label" style="font-size: 16px; color: #2563eb;">${bookName}</div>
+              <div class="line-details-text">Available lines from ${bookName}</div>
+            `;
+            contentEl.appendChild(headerCard);
+
+            const bookData = linesBySportsbook[bookName];
+            bookData.lines.forEach(line => {
+              const lineCard = document.createElement('div');
+              lineCard.className = 'line-details-card';
+              lineCard.style.marginLeft = '12px';
+              lineCard.style.borderLeft = '2px solid var(--border)';
+
+              let linesHTML = '';
+              if (line.spread) linesHTML += `<div class="line-details-text">Spread: ${line.spread} (${line.spread_odds || 'N/A'})</div>`;
+              if (line.total) linesHTML += `<div class="line-details-text">Total: ${line.total} (${line.total_odds || 'N/A'})</div>`;
+              if (line.moneyline_home && line.moneyline_away) {
+                linesHTML += `<div class="line-details-text">Moneyline: ${line.home_team} ${line.moneyline_home} / ${line.away_team} ${line.moneyline_away}</div>`;
+              }
+
+              lineCard.innerHTML = `
+                <div class="line-details-label">${line.home_team} vs ${line.away_team}</div>
+                ${linesHTML}
+                <div class="line-details-text" style="font-size: 11px; color: var(--muted); margin-top: 8px;">
+                  Game Time: ${line.game_time ? new Date(line.game_time).toLocaleString() : 'TBD'}
+                </div>
+              `;
+              contentEl.appendChild(lineCard);
+            });
+
+            if (bookData.sportsbookData?.affiliate_link) {
+              const affiliateBtn = document.createElement('button');
+              affiliateBtn.className = 'sportsbook-cta-btn';
+              affiliateBtn.style.marginTop = '8px';
+              affiliateBtn.style.marginBottom = '16px';
+              affiliateBtn.textContent = `BET NOW AT ${bookName.toUpperCase()}`;
+              affiliateBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await trackUserInteraction('affiliate_click', {
+                  sportsbook_id: bookData.sportsbookData.id,
+                  sportsbook_name: bookName,
+                  from_screen: 'LineDetails'
+                });
+                window.open(bookData.sportsbookData.affiliate_link, '_blank');
+              });
+              contentEl.appendChild(affiliateBtn);
+            }
+          });
         }
 
         const featureItems = buildLineDetailsFeatureItems();
@@ -3244,6 +3346,223 @@
         lineDetailsPage.classList.remove('active');
         if (cardContainer) cardContainer.style.display = 'flex';
         if (titleBlock) titleBlock.style.display = 'block';
+      }
+
+      async function showAdminPage() {
+        const cardContainer = document.querySelector('.card-container');
+        const titleBlock = document.querySelector('.title-block');
+        const adminPage = document.getElementById('admin-page');
+
+        if (cardContainer) cardContainer.style.display = 'none';
+        if (titleBlock) titleBlock.style.display = 'none';
+        adminPage.classList.add('active');
+
+        const contentEl = document.getElementById('admin-content');
+        contentEl.innerHTML = '';
+
+        const addBtn = document.createElement('button');
+        addBtn.className = 'sportsbook-cta-btn';
+        addBtn.style.marginBottom = '16px';
+        addBtn.textContent = '+ Add New Sportsbook';
+        addBtn.addEventListener('click', () => showSportsbookModal(null));
+        contentEl.appendChild(addBtn);
+
+        const sportsbooks = await fetchAllSportsbooks();
+
+        if (sportsbooks.length === 0) {
+          const emptyCard = document.createElement('div');
+          emptyCard.className = 'line-details-card';
+          emptyCard.innerHTML = `
+            <div class="line-details-label">No Sportsbooks Yet</div>
+            <div class="line-details-text">Click "Add New Sportsbook" to get started.</div>
+          `;
+          contentEl.appendChild(emptyCard);
+          return;
+        }
+
+        sportsbooks.forEach(book => {
+          const card = document.createElement('div');
+          card.className = 'line-details-card';
+          card.style.borderLeft = book.is_active ? '3px solid #22c55e' : '3px solid #ef4444';
+
+          card.innerHTML = `
+            <div class="line-details-label" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>${book.name}</span>
+              <span class="pill" style="background: ${book.is_active ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}; color: ${book.is_active ? '#22c55e' : '#ef4444'};">
+                ${book.is_active ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+            <div class="line-details-text">Display Order: ${book.display_order}</div>
+            ${book.affiliate_link ?
+              `<div class="line-details-text" style="word-break: break-all;">Affiliate Link: ${book.affiliate_link}</div>` :
+              `<div class="line-details-text" style="color: var(--muted);">No affiliate link set</div>`
+            }
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+              <button class="sportsbook-cta-btn" style="flex: 1; font-size: 12px; padding: 8px 12px;">Edit</button>
+              <button class="sportsbook-cta-btn" style="flex: 1; font-size: 12px; padding: 8px 12px; background: #ef4444;">Delete</button>
+            </div>
+          `;
+
+          const buttons = card.querySelectorAll('button');
+          buttons[0].addEventListener('click', (e) => {
+            e.stopPropagation();
+            showSportsbookModal(book);
+          });
+          buttons[1].addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const confirmed = confirm(`Are you sure you want to delete ${book.name}?`);
+            if (confirmed) {
+              await deleteSportsbook(book.id);
+              showAdminPage();
+            }
+          });
+
+          contentEl.appendChild(card);
+        });
+
+        backToSportsBtn.style.display = 'inline-flex';
+      }
+
+      function hideAdminPage() {
+        const cardContainer = document.querySelector('.card-container');
+        const titleBlock = document.querySelector('.title-block');
+        const adminPage = document.getElementById('admin-page');
+
+        adminPage.classList.remove('active');
+        if (cardContainer) cardContainer.style.display = 'flex';
+        if (titleBlock) titleBlock.style.display = 'block';
+      }
+
+      async function fetchAllSportsbooks() {
+        if (!supa) return [];
+
+        try {
+          const { data, error } = await supa
+            .from('sportsbooks')
+            .select('*')
+            .order('display_order');
+
+          if (error) throw error;
+          return data || [];
+        } catch (err) {
+          console.error('Error fetching sportsbooks:', err);
+          return [];
+        }
+      }
+
+      async function deleteSportsbook(id) {
+        if (!supa) return;
+
+        try {
+          const { error } = await supa
+            .from('sportsbooks')
+            .delete()
+            .eq('id', id);
+
+          if (error) throw error;
+          showToast('Sportsbook deleted successfully');
+        } catch (err) {
+          console.error('Error deleting sportsbook:', err);
+          showToast('Error deleting sportsbook');
+        }
+      }
+
+      function showSportsbookModal(book) {
+        const isEdit = book !== null;
+        const modalHTML = `
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600;">Name</label>
+              <input type="text" id="modal-book-name" value="${isEdit ? book.name : ''}"
+                style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text);" />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600;">Affiliate Link</label>
+              <input type="text" id="modal-book-link" value="${isEdit && book.affiliate_link ? book.affiliate_link : ''}"
+                style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text);"
+                placeholder="https://..." />
+            </div>
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600;">Display Order</label>
+              <input type="number" id="modal-book-order" value="${isEdit ? book.display_order : 0}"
+                style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text);" />
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="modal-book-active" ${isEdit && book.is_active ? 'checked' : ''}
+                style="width: 16px; height: 16px;" />
+              <label for="modal-book-active" style="font-size: 12px; font-weight: 600;">Active</label>
+            </div>
+          </div>
+        `;
+
+        openModal({
+          title: isEdit ? `Edit ${book.name}` : 'Add New Sportsbook',
+          body: modalHTML,
+          actions: [
+            { label: 'Cancel', variant: 'secondary', onClick: () => {} },
+            {
+              label: 'Save',
+              variant: 'primary',
+              onClick: async () => {
+                const name = document.getElementById('modal-book-name').value.trim();
+                const link = document.getElementById('modal-book-link').value.trim();
+                const order = parseInt(document.getElementById('modal-book-order').value) || 0;
+                const active = document.getElementById('modal-book-active').checked;
+
+                if (!name) {
+                  showToast('Name is required');
+                  return;
+                }
+
+                await saveSportsbook({
+                  id: isEdit ? book.id : null,
+                  name,
+                  affiliate_link: link || null,
+                  display_order: order,
+                  is_active: active
+                });
+
+                showAdminPage();
+              }
+            }
+          ]
+        });
+      }
+
+      async function saveSportsbook(data) {
+        if (!supa) return;
+
+        try {
+          if (data.id) {
+            const { error } = await supa
+              .from('sportsbooks')
+              .update({
+                name: data.name,
+                affiliate_link: data.affiliate_link,
+                display_order: data.display_order,
+                is_active: data.is_active
+              })
+              .eq('id', data.id);
+
+            if (error) throw error;
+            showToast('Sportsbook updated successfully');
+          } else {
+            const { error } = await supa
+              .from('sportsbooks')
+              .insert({
+                name: data.name,
+                affiliate_link: data.affiliate_link,
+                display_order: data.display_order,
+                is_active: data.is_active
+              });
+
+            if (error) throw error;
+            showToast('Sportsbook created successfully');
+          }
+        } catch (err) {
+          console.error('Error saving sportsbook:', err);
+          showToast('Error saving sportsbook: ' + err.message);
+        }
       }
 
       function showAllLinesPage() {
@@ -4534,6 +4853,7 @@
         if (mode !== "mybias") hideMyBiasPage();
         if (mode !== "locks") hideMyLocksPage();
         if (mode !== "archive") hideMyArchivePage();
+        if (mode !== "admin") hideAdminPage();
 
         if (mode === "sports") {
           titleEl.textContent = "Select Your Sport";
@@ -4608,6 +4928,14 @@
           hideMyLocksPage();
           showMyArchivePage();
           return;
+        } else if (mode === "admin") {
+          hideLineDetailsPage();
+          hideAllLinesPage();
+          hideMyBiasPage();
+          hideMyLocksPage();
+          hideMyArchivePage();
+          showAdminPage();
+          return;
         }
 
         renderCardFlipState();
@@ -4635,6 +4963,10 @@
           hideMyArchivePage();
           mode = "sports";
           flipped = false;
+        } else if (mode === "admin") {
+          hideAdminPage();
+          mode = "sports";
+          flipped = false;
         } else if (mode === "topLines") {
           mode = "sports";
           flipped = false;
@@ -4660,6 +4992,9 @@
 
       const myarchiveBackBtn = document.getElementById('myarchive-back');
       myarchiveBackBtn.addEventListener("click", () => handleGlobalBack());
+
+      const adminBackBtn = document.getElementById('admin-back');
+      adminBackBtn.addEventListener("click", () => handleGlobalBack());
 
       /*******************************
        * CARD CLICK BEHAVIOR
@@ -4692,7 +5027,7 @@
           return;
         }
 
-        if (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines") {
+        if (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "admin" || mode === "allLines") {
           return;
         }
 
@@ -4712,7 +5047,7 @@
         const x = e.clientX - rect.left;
         const zone = x / rect.width;
 
-        if (mode === "lineDetails" || mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines") {
+        if (mode === "lineDetails" || mode === "mybias" || mode === "locks" || mode === "archive" || mode === "admin" || mode === "allLines") {
           return;
         }
 
@@ -4728,7 +5063,7 @@
       }
 
       cardClickArea.addEventListener("click", (e) => {
-        if (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "allLines" || mode === "lineDetails") {
+        if (mode === "mybias" || mode === "locks" || mode === "archive" || mode === "admin" || mode === "allLines" || mode === "lineDetails") {
           return;
         }
         if (flipped && mode === "topLines") {
@@ -4931,6 +5266,21 @@
         });
         userDropdown.appendChild(archiveItem);
 
+        const separator = document.createElement("div");
+        separator.className = "user-dropdown-separator";
+        userDropdown.appendChild(separator);
+
+        const adminItem = document.createElement("div");
+        adminItem.className = "user-dropdown-item";
+        adminItem.innerHTML = `<span>⚙️ Sportsbook Admin</span>`;
+        adminItem.addEventListener("click", () => {
+          mode = "admin";
+          flipped = false;
+          userDropdown.classList.remove("open");
+          renderScreen();
+        });
+        userDropdown.appendChild(adminItem);
+
         const sep = document.createElement("div");
         sep.className = "user-dropdown-separator";
         userDropdown.appendChild(sep);
@@ -5132,6 +5482,71 @@
         updateSwipeCounter();
 
         scheduleNext3amJobs();
+      }
+
+      async function trackUserInteraction(interactionType, metadata = {}) {
+        if (!supa || !currentUser) return;
+
+        try {
+          const payload = {
+            user_id: currentUser.id,
+            interaction_type: interactionType,
+            screen: mode,
+            metadata: metadata,
+          };
+
+          if (metadata.line_id) payload.line_id = metadata.line_id;
+          if (metadata.sportsbook_id) payload.sportsbook_id = metadata.sportsbook_id;
+
+          await supa.from('user_interactions').insert(payload);
+        } catch (err) {
+          console.error('Error tracking interaction:', err);
+        }
+      }
+
+      async function fetchActiveSportsbooks() {
+        if (!supa) return [];
+
+        try {
+          const { data, error } = await supa
+            .from('sportsbooks')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order');
+
+          if (error) throw error;
+          return data || [];
+        } catch (err) {
+          console.error('Error fetching sportsbooks:', err);
+          return [];
+        }
+      }
+
+      async function fetchLinesForGame(sportId, matchupName) {
+        if (!supa) return [];
+
+        try {
+          const gameId = `${sportId}_${matchupName}`;
+          const { data, error } = await supa
+            .from('lines')
+            .select(`
+              *,
+              sportsbooks (
+                id,
+                name,
+                logo_url,
+                affiliate_link
+              )
+            `)
+            .eq('game_id', gameId)
+            .eq('is_active', true);
+
+          if (error) throw error;
+          return data || [];
+        } catch (err) {
+          console.error('Error fetching lines:', err);
+          return [];
+        }
       }
 
       async function handleSignIn() {
