@@ -2137,7 +2137,7 @@
         return (sessionSwipeCount || 0) >= SWIPES_TO_UNLOCK_COMMUNITY;
       }
 
-      function buildSideBiasUI(meta, confidentPct, doubtPct) {
+      function buildSideBiasUI(meta, confidentPct, doubtPct, confidentCount = null, doubtCount = null) {
         const container = document.createElement("div");
         container.className = "sentiment-bar-container";
 
@@ -2147,14 +2147,23 @@
         const fill = document.createElement("div");
         fill.className = "sentiment-bar-fill";
 
-        // ✅ CHANGE: allow saved lines (MyBias/MyLocks/MyArchive) to show advanced bias display even before 5 swipes
         const unlocked = isCommunityUnlocked() || (meta && meta.forceUnlocked === true);
 
-        const displayConf = unlocked ? (typeof confidentPct === "number" ? confidentPct : 50) : 50;
-        const displayDoubt = 100 - displayConf;
+        const totalSwipes = (confidentCount || 0) + (doubtCount || 0);
+        const hasSwipes = totalSwipes > 0;
+
+        let displayConf, displayDoubt;
+
+        if (hasSwipes) {
+          displayConf = unlocked ? (typeof confidentPct === "number" ? confidentPct : 50) : 50;
+          displayDoubt = 100 - displayConf;
+        } else {
+          displayConf = 50;
+          displayDoubt = 50;
+        }
 
         fill.style.width = displayConf + "%";
-        fill.style.background = unlocked
+        fill.style.background = (unlocked && hasSwipes)
           ? "linear-gradient(90deg, var(--accent), #0f9f4a)"
           : "linear-gradient(90deg, var(--blue), var(--blue2))";
 
@@ -2164,10 +2173,18 @@
         labels.className = "sentiment-labels";
 
         const leftLabel = document.createElement("span");
-        leftLabel.textContent = `Doubt It ${displayDoubt}%`;
-
         const rightLabel = document.createElement("span");
-        rightLabel.textContent = `Confident ${displayConf}%`;
+
+        if (!hasSwipes) {
+          leftLabel.textContent = `Doubt It: 0`;
+          rightLabel.textContent = `Confident: 0`;
+        } else if (!unlocked) {
+          leftLabel.textContent = `Doubt It: ${displayDoubt}%`;
+          rightLabel.textContent = `Confident: ${displayConf}%`;
+        } else {
+          leftLabel.textContent = `Doubt It: ${displayDoubt}% (${doubtCount || 0})`;
+          rightLabel.textContent = `Confident: ${displayConf}% (${confidentCount || 0})`;
+        }
 
         labels.appendChild(leftLabel);
         labels.appendChild(rightLabel);
@@ -2280,7 +2297,9 @@
                 book: topLine.book,
               },
               topLine.confident,
-              topLine.doubt
+              topLine.doubt,
+              topLine.confidentCount,
+              topLine.doubtCount
             )
           );
 
@@ -2453,7 +2472,7 @@
 
         card.appendChild(top);
 
-        card.appendChild(buildSideBiasUI(meta, ln.confident ?? 50, ln.doubt ?? 50));
+        card.appendChild(buildSideBiasUI(meta, ln.confident ?? 50, ln.doubt ?? 50, ln.confidentCount, ln.doubtCount));
 
         if (already && already.vote) {
           const youRow = document.createElement("div");
@@ -3360,12 +3379,52 @@
         const contentEl = document.getElementById('admin-content');
         contentEl.innerHTML = '';
 
+        const buttonRow = document.createElement('div');
+        buttonRow.style.display = 'flex';
+        buttonRow.style.gap = '8px';
+        buttonRow.style.marginBottom = '16px';
+
         const addBtn = document.createElement('button');
         addBtn.className = 'sportsbook-cta-btn';
-        addBtn.style.marginBottom = '16px';
-        addBtn.textContent = '+ Add New Sportsbook';
+        addBtn.textContent = '+ Add Sportsbook';
         addBtn.addEventListener('click', () => showSportsbookModal(null));
-        contentEl.appendChild(addBtn);
+
+        const syncBtn = document.createElement('button');
+        syncBtn.className = 'sportsbook-cta-btn';
+        syncBtn.style.background = '#2563eb';
+        syncBtn.textContent = '🔄 Sync Real Odds';
+        syncBtn.addEventListener('click', async () => {
+          syncBtn.disabled = true;
+          syncBtn.textContent = '⏳ Syncing...';
+
+          try {
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/fetch-odds`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            const result = await response.json();
+            if (response.ok) {
+              showToast(`Success! ${result.gamesProcessed} games, ${result.linesInserted} lines synced`);
+              await loadRealGames();
+              renderScreen();
+            } else {
+              showToast(`Error: ${result.error || 'Failed to sync odds'}`);
+            }
+          } catch (err) {
+            showToast(`Error: ${err.message}`);
+          }
+
+          syncBtn.disabled = false;
+          syncBtn.textContent = '🔄 Sync Real Odds';
+        });
+
+        buttonRow.appendChild(addBtn);
+        buttonRow.appendChild(syncBtn);
+        contentEl.appendChild(buttonRow);
 
         const sportsbooks = await fetchAllSportsbooks();
 
@@ -5438,6 +5497,7 @@
 
           buildUserDropdown();
           buildSportsMenu();
+          await loadRealGames();
           renderScreen();
 
           scheduleNext3amJobs();
@@ -5462,6 +5522,7 @@
             await loadUserProfile();
             initFreshSwipesSession();
             buildUserDropdown();
+            await loadRealGames();
             renderScreen();
 
             scheduleNext3amJobs();
@@ -5546,6 +5607,150 @@
         } catch (err) {
           console.error('Error fetching lines:', err);
           return [];
+        }
+      }
+
+      async function loadRealGames() {
+        if (!supa) return;
+
+        try {
+          const { data: lines, error } = await supa
+            .from('lines')
+            .select(`
+              *,
+              sportsbooks (name)
+            `)
+            .eq('is_active', true)
+            .order('game_time');
+
+          if (error) throw error;
+
+          const gamesByHomeTeam = {};
+          lines.forEach(line => {
+            const key = `${line.sport}_${line.home_team}_vs_${line.away_team}`;
+            if (!gamesByHomeTeam[key]) {
+              gamesByHomeTeam[key] = {
+                home_team: line.home_team,
+                away_team: line.away_team,
+                sport: line.sport,
+                game_time: line.game_time,
+                lines: []
+              };
+            }
+            gamesByHomeTeam[key].lines.push(line);
+          });
+
+          const nflGames = [];
+          const nbaGames = [];
+          const nhlGames = [];
+
+          for (const key in gamesByHomeTeam) {
+            const game = gamesByHomeTeam[key];
+            const matchup = {
+              name: `${game.away_team} @ ${game.home_team}`,
+              gameTime: game.game_time,
+              lines: []
+            };
+
+            for (const line of game.lines) {
+              const bookName = line.sportsbooks?.name || 'Unknown';
+
+              const communityBias = await getCommunityBiasForLine(line.id);
+
+              if (line.spread) {
+                matchup.lines.push({
+                  label: `${game.home_team} ${line.spread > 0 ? '+' : ''}${line.spread}`,
+                  confident: communityBias.confidentPct,
+                  doubt: communityBias.doubtPct,
+                  confidentCount: communityBias.confidentCount,
+                  doubtCount: communityBias.doubtCount,
+                  category: 'spread',
+                  book: bookName,
+                  lineId: line.id
+                });
+              }
+
+              if (line.total) {
+                matchup.lines.push({
+                  label: `Total ${line.total > 0 ? 'o' : 'u'}${Math.abs(line.total)}`,
+                  confident: communityBias.confidentPct,
+                  doubt: communityBias.doubtPct,
+                  confidentCount: communityBias.confidentCount,
+                  doubtCount: communityBias.doubtCount,
+                  category: 'total',
+                  book: bookName,
+                  lineId: line.id
+                });
+              }
+
+              if (line.moneyline_home && line.moneyline_away) {
+                matchup.lines.push({
+                  label: `${game.home_team} ML (${line.moneyline_home > 0 ? '+' : ''}${line.moneyline_home})`,
+                  confident: communityBias.confidentPct,
+                  doubt: communityBias.doubtPct,
+                  confidentCount: communityBias.confidentCount,
+                  doubtCount: communityBias.doubtCount,
+                  category: 'moneyline',
+                  book: bookName,
+                  lineId: line.id
+                });
+              }
+            }
+
+            if (matchup.lines.length > 0) {
+              if (game.sport === 'nfl') {
+                nflGames.push(matchup);
+              } else if (game.sport === 'nba') {
+                nbaGames.push(matchup);
+              } else if (game.sport === 'nhl') {
+                nhlGames.push(matchup);
+              }
+            }
+          }
+
+          SPORTS[0].matchups = nflGames.length > 0 ? nflGames : SPORTS[0].matchups;
+          SPORTS[1].matchups = nbaGames.length > 0 ? nbaGames : SPORTS[1].matchups;
+          SPORTS[2].matchups = nhlGames.length > 0 ? nhlGames : SPORTS[2].matchups;
+
+        } catch (err) {
+          console.error('Error loading real games:', err);
+        }
+      }
+
+      async function getCommunityBiasForLine(lineId) {
+        if (!supa) {
+          return { confidentPct: 50, doubtPct: 50, confidentCount: 0, doubtCount: 0 };
+        }
+
+        try {
+          const { data, error } = await supa
+            .from('community_bias')
+            .select('confident_count, doubt_count')
+            .eq('line_id', lineId)
+            .maybeSingle();
+
+          if (error || !data) {
+            return { confidentPct: 50, doubtPct: 50, confidentCount: 0, doubtCount: 0 };
+          }
+
+          const total = (data.confident_count || 0) + (data.doubt_count || 0);
+
+          if (total === 0) {
+            return { confidentPct: 50, doubtPct: 50, confidentCount: 0, doubtCount: 0 };
+          }
+
+          const confidentPct = Math.round((data.confident_count / total) * 100);
+          const doubtPct = 100 - confidentPct;
+
+          return {
+            confidentPct,
+            doubtPct,
+            confidentCount: data.confident_count || 0,
+            doubtCount: data.doubt_count || 0
+          };
+        } catch (err) {
+          console.error('Error fetching community bias:', err);
+          return { confidentPct: 50, doubtPct: 50, confidentCount: 0, doubtCount: 0 };
         }
       }
 
